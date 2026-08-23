@@ -15,6 +15,8 @@
     <ProjectReference Include="..\..\src\Core\Core.csproj" />
     <!-- Lógica pura da CLI (mapeadores/formatadores) é testada aqui também -->
     <ProjectReference Include="..\..\src\Cli\Cli.csproj" />
+    <!-- ViewModels da GUI são lógica pura testável em qualquer SO -->
+    <ProjectReference Include="..\..\src\Gui\Gui.csproj" />
   </ItemGroup>
 
 </Project>
