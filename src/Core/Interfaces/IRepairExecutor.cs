@@ -6,7 +6,7 @@ public interface IRepairExecutor
     bool IsElevated();
 
     Task<global::PrinterRescue.Core.RepairOutcome> ExecuteAsync(
-        global::PrinterRescue.Core.RepairStep step,
+        global::PrinterRescue.Core.RepairStep action,
         global::PrinterRescue.Core.PrinterSnapshot context,
         CancellationToken ct = default);
 }

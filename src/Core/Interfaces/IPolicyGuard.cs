@@ -8,5 +8,5 @@ public sealed record PolicyDecision(bool Allowed, string Reason);
 /// </summary>
 public interface IPolicyGuard
 {
-    PolicyDecision Evaluate(global::PrinterRescue.Core.RepairStep step, global::PrinterRescue.Core.PrinterSnapshot context);
+    PolicyDecision Evaluate(global::PrinterRescue.Core.RepairStep action, global::PrinterRescue.Core.PrinterSnapshot context);
 }
