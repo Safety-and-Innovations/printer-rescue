@@ -1,0 +1,47 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:PrinterRescue.Gui;assembly=PrinterRescue.Gui"
+        x:Class="PrinterRescue.Gui.MainWindow"
+        Title="Printer Rescue" Width="900" Height="600"
+        WindowStartupLocation="CenterScreen">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="12"
+        x:DataType="vm:MainWindowViewModel">
+
+    <!-- Barra superior -->
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
+      <Button Content="Atualizar" Command="{Binding AtualizarCommand}" />
+      <Button Content="Diagnosticar" Command="{Binding DiagnosticarCommand}" />
+      <Button Content="Criar snapshot" Command="{Binding CriarSnapshotCommand}" />
+    </StackPanel>
+
+    <!-- Conteúdo: lista à esquerda, resultados à direita -->
+    <Grid Grid.Row="1" ColumnDefinitions="2*,3*">
+      <ListBox Grid.Column="0" ItemsSource="{Binding Impressoras}"
+               SelectedItem="{Binding ImpressoraSelecionada, Mode=TwoWay}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ImpressoraItem">
+            <StackPanel Margin="4">
+              <TextBlock Text="{Binding Nome}" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding Detalhe}" Opacity="0.7" FontSize="11" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <Border Grid.Column="1" BorderBrush="#33808080" BorderThickness="1" CornerRadius="6" Padding="8">
+        <ListBox ItemsSource="{Binding Resultados}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Detail}" Margin="2" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+    </Grid>
+
+    <!-- Barra de status -->
+    <Border Grid.Row="2" Margin="0,10,0,0" Padding="8,4" CornerRadius="4" Background="#22808080">
+      <TextBlock Text="{Binding Status}" TextTrimming="CharacterEllipsis" />
+    </Border>
+  </Grid>
+</Window>
