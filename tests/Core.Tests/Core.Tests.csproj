@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Core\Core.csproj" />
+    <!-- Lógica pura da CLI (mapeadores/formatadores) é testada aqui também -->
+    <ProjectReference Include="..\..\src\Cli\Cli.csproj" />
   </ItemGroup>
 
 </Project>
