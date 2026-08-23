@@ -84,22 +84,25 @@ C# 12 · .NET 8 · xUnit + coverlet · Avalonia 11 (GUI) · System.CommandLine (
 
 - [x] Scaffold da solução (Core, Adapters.Windows, Cli, Gui, testes)
 - [x] Contratos congelados (`docs/CONTRATOS.md` v1.0.0) e materializados em código
-- [ ] Módulo de snapshots (em implementação)
-- [ ] Diagnóstico determinístico (em implementação)
-- [ ] Reparo + Policy Guard (em implementação)
-- [ ] Adapters Windows (winspool.drv)
-- [ ] CLI completa (`snapshot`, `diagnose`, `repair`, `list`)
-- [ ] GUI Avalonia
+- [x] Módulo de snapshots — persistência JSON endurecida, 12 testes
+- [x] Diagnóstico determinístico — engine + 6 checks, gating por spooler
+- [x] Reparo + Policy Guard — REGRA Nº 1 codificada, ordem contratual do plano
+- [x] Workflows — captura e execução de reparo com snapshot pré/pós
+- [x] Adapters Windows — winspool.drv completo (gateway + executor)
+- [x] CLI completa (`list`, `snapshot`, `diagnose`, `repair`, `snapshots`)
+- [x] GUI Avalonia — janela principal com fluxo diagnosticar/snapshot
+
+**90/90 testes verdes** (Core.Tests) + **18/18** (Windows.Tests, mapeadores).
 
 ## O que falta (roadmap)
 
 | Marco | Escopo |
 |---|---|
-| M1 — Core completo | Snapshot + diagnóstico + reparo + policy com cobertura alta |
-| M2 — Adapter Winspool | Enumeração e manipulação real de impressoras/portas/filas no Windows |
-| M3 — CLI | Comandos completos, saída `--json` estável para RMM |
-| M4 — GUI | Fluxo principal: lista → diagnosticar → snapshot → reparar |
-| M5 — Instalador | MSIX/Store com declaração da política 10.2.4 |
+| M1 ✅ | Core completo com cobertura alta — entregue |
+| M2 ⏳ | Validação em máquina Windows real (P/Invoke, spooler, Driver Store) |
+| M3 ⏳ | Testes de integração da CLI contra gateway falso end-to-end |
+| M4 ⏳ | Fluxo de reparo completo na GUI (hoje: diagnosticar/snapshot; reparo via CLI) |
+| M5 ⏳ | Instalador MSIX/Store com declaração da política 10.2.4 |
 | v2 (decidir) | Painel central MSP multi-máquina; SKU portátil para técnico |
 
 ## Ideias e questões abertas
