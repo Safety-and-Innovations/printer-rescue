@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PrinterRescue.Adapters.Windows</RootNamespace>
+    <AssemblyName>PrinterRescue.Adapters.Windows</AssemblyName>
+    <!-- net8.0 puro: compila no Linux. Todo código que toca API do Windows usa
+         [SupportedOSPlatform("windows")] + guarda OperatingSystem.IsWindows();
+         CA1416 é erro (TreatWarningsAsErrors), então nada passa sem guarda. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.csproj" />
+  </ItemGroup>
+
+</Project>

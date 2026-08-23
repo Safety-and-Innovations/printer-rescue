@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore PrinterRescue.sln
+
+      - name: Build (zero warnings)
+        run: dotnet build --no-restore -c Release PrinterRescue.sln
+
+      - name: Test (com cobertura)
+        run: dotnet test --no-build -c Release PrinterRescue.sln --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}
+          path: coverage/**/coverage.cobertura.xml
+          if-no-files-found: error
+
+  linux-core-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Core.Tests no Linux (Core é multiplataforma)
+        run: |
+          dotnet test tests/Core.Tests/Core.Tests.csproj -c Release

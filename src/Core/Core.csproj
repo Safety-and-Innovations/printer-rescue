@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PrinterRescue.Core</RootNamespace>
+    <AssemblyName>PrinterRescue.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

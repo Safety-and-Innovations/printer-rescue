@@ -1,0 +1,8 @@
+bin/
+obj/
+dist/
+coverage/
+*.user
+.vs/
+.idea/
+*.sln.DotSettings.user
