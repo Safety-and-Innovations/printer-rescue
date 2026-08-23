@@ -93,6 +93,9 @@ C# 12 · .NET 8 · xUnit + coverlet · Avalonia 11 (GUI) · System.CommandLine (
 - [x] GUI Avalonia — janela principal com fluxo diagnosticar/snapshot
 
 **90/90 testes verdes** (Core.Tests) + **18/18** (Windows.Tests, mapeadores).
+- [x] Empacotamento portable win-x64 — `dist/` (gitignored) gera
+      `printer-rescue-v1.0.0-win-x64-portable.zip`: CLI publicada, README de uso,
+      SHA256SUMS. CI local verde: build Release 0 warnings + 108 testes.
 
 ## O que falta (roadmap)
 
