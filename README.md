@@ -1,130 +1,130 @@
 # Printer Rescue
 
-![status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow) ![stack](https://img.shields.io/badge/.NET-8.0-blue) ![tests](https://img.shields.io/badge/TDD-xUnit-green)
+![status](https://img.shields.io/badge/status-in%20development-yellow) ![stack](https://img.shields.io/badge/.NET-8.0-blue) ![tests](https://img.shields.io/badge/TDD-xUnit-green)
 
-> "Esta impressora estava funcionando com IP 192.168.0.40, driver Y, porta Z.
-> Restaurar esse estado?"
+> "This printer was working with IP 192.168.0.40, driver Y, port Z.
+> Restore that state?"
 
-## Para que serve
+## What it is for
 
-O ticket nº 1 de qualquer helpdesk: a impressora funcionava ontem e sumiu hoje —
-depois de um Windows Update, de uma troca de rede, de um DHCP que mudou o IP,
-de uma fila travada. Agravante de 2026: a Microsoft parou de distribuir drivers
-V3/V4 novos via Windows Update; impressoras antigas não se resolvem mais sozinhas.
+The #1 ticket of any helpdesk: the printer worked yesterday and is gone today —
+after a Windows Update, a network change, a DHCP lease that moved the IP,
+a stuck queue. Aggravated in 2026: Microsoft stopped shipping new V3/V4 drivers
+via Windows Update; old printers no longer fix themselves.
 
-O Printer Rescue grava o **estado funcional conhecido** de cada impressora
-(IP, porta, protocolo, driver e versão, fila, permissões, padrões) e o reconstrói
-quando o Windows quebra. Genérico, determinístico, sem base de conhecimento por modelo.
+Printer Rescue records the **known-good state** of each printer
+(IP, port, protocol, driver and version, queue, permissions, defaults) and rebuilds it
+when Windows breaks. Generic, deterministic, with no per-model knowledge base.
 
-### REGRA Nº 1 — escrita, não intencional
+### RULE #1 — written, not intended
 
-> **O Printer Rescue nunca hospeda, distribui, indexa ou mantém driver de
-> impressora. Ele restaura estado; ele não fornece binário.**
+> **Printer Rescue never hosts, distributes, indexes, or keeps any printer
+> driver. It restores state; it does not ship binaries.**
 
-Critério: se atender a um pedido exige acrescentar uma linha por modelo de
-impressora vendido no mundo, a resposta é não. Sem exceção.
+Criterion: if serving a request requires adding one line per printer model
+sold in the world, the answer is no. No exceptions.
 
-| ✅ Permitido | ❌ Proibido |
+| ✅ Allowed | ❌ Forbidden |
 |---|---|
-| Usar driver que **já está** no DriverStore | Baixar driver de servidor nosso |
-| Preferir **IPP Class Driver** (nativo) | Manter tabela `modelo → driver` |
-| Gravar/restaurar qual driver estava em uso | "Suporte à HP 1102w" como feature |
-| Apontar à página oficial do fabricante | Espelhar instalador do fabricante |
+| Use a driver that is **already** in the DriverStore | Download a driver from our server |
+| Prefer the native **IPP Class Driver** | Keep a `model → driver` table |
+| Record/restore which driver was in use | "Support for HP 1102w" as a feature |
+| Point to the vendor's official page | Mirror the vendor installer |
 
-A regra é código: `IPolicyGuard` bloqueia em runtime qualquer passo que envolva
-distribuição de driver (`SkippedPolicyViolation`).
+The rule is code: `IPolicyGuard` blocks at runtime any step involving
+driver distribution (`SkippedPolicyViolation`).
 
-## Como funciona
+## How it works
 
-Pipeline determinístico de cima para baixo:
+Deterministic top-down pipeline:
 
 ```
-detecta impressora → testa IP → testa porta → testa spooler → testa driver
-→ detecta duplicata → remove a quebrada → reinstala (preferindo IPP Class Driver)
-→ imprime página de teste → grava novo snapshot
+detect printer → test IP → test port → test spooler → test driver
+→ detect duplicate → remove the broken one → reinstall (preferring IPP Class Driver)
+→ print test page → record a new snapshot
 ```
 
-Arquitetura:
+Architecture:
 
 ```
 ┌─────────────┐   ┌──────────────────────────┐
-│  GUI (Ava)  │   │  CLI (--json p/ RMM)     │   fachadas finas
+│  GUI (Ava)  │   │  CLI (--json for RMM)    │   thin facades
 └──────┬──────┘   └────────────┬─────────────┘
        └──────────┬────────────┘
                   ▼
         ┌─────────────────────┐
-        │   PrinterRescue.Core│  diagnóstico · plano de reparo · snapshots · policy guard
+        │   PrinterRescue.Core│  diagnostics · repair plan · snapshots · policy guard
         └──────────┬──────────┘
                    ▼
         ┌─────────────────────┐
-        │ Adapters.Windows    │  winspool.drv / spooler via P/Invoke com guards
+        │ Adapters.Windows    │  winspool.drv / spooler via P/Invoke with guards
         └─────────────────────┘
 ```
 
-- **Core multiplataforma**: toda a lógica roda e é testada em Linux/CI.
-- **Adapters.Windows**: único ponto que toca API do Windows; compila cross-plataforma,
-  executa só em Windows (guards `OperatingSystem.IsWindows()`).
-- **Snapshot em disco**: `%ProgramData%\PrinterRescue\snapshots\<id>.json`,
-  parser endurecido (profundidade ≤ 16, tamanho ≤ 1 MiB, anti path traversal).
+- **Cross-platform Core**: all logic runs and is tested on Linux/CI.
+- **Adapters.Windows**: the only place touching the Windows API; cross-compiles,
+  runs on Windows only (`OperatingSystem.IsWindows()` guards).
+- **On-disk snapshot**: `%ProgramData%\PrinterRescue\snapshots\<id>.json`,
+  hardened parser (depth ≤ 16, size ≤ 1 MiB, anti path traversal).
 
-## Garantias
+## Guarantees
 
-- Build com `TreatWarningsAsErrors` + analyzers `latest-recommended`: zero warnings.
-- TDD estrito: nenhum código de produção sem teste falho antes.
-- Operação destrutiva **nunca** ocorre sem snapshot prévio (`SkippedNoSnapshot`).
-- Distribuição de driver **nunca** ocorre (`SkippedPolicyViolation`) — testado.
-- Core sem dependência externa (apenas BCL).
+- Build with `TreatWarningsAsErrors` + `latest-recommended` analyzers: zero warnings.
+- Strict TDD: no production code without a failing test first.
+- A destructive operation **never** runs without a prior snapshot (`SkippedNoSnapshot`).
+- Driver distribution **never** happens (`SkippedPolicyViolation`) — tested.
+- Core has no external dependencies (BCL only).
 
 ## Stack
 
 C# 12 · .NET 8 · xUnit + coverlet · Avalonia 11 (GUI) · System.CommandLine (CLI)
 · GitHub Actions (Windows build/test + Linux core tests)
 
-## Estado atual
+## Current status
 
-- [x] Scaffold da solução (Core, Adapters.Windows, Cli, Gui, testes)
-- [x] Contratos congelados (`docs/CONTRATOS.md` v1.0.0) e materializados em código
-- [x] Módulo de snapshots — persistência JSON endurecida, 12 testes
-- [x] Diagnóstico determinístico — engine + 6 checks, gating por spooler
-- [x] Reparo + Policy Guard — REGRA Nº 1 codificada, ordem contratual do plano
-- [x] Workflows — captura e execução de reparo com snapshot pré/pós
-- [x] Adapters Windows — winspool.drv completo (gateway + executor)
-- [x] CLI completa (`list`, `snapshot`, `diagnose`, `repair`, `snapshots`)
-- [x] GUI Avalonia — janela principal com fluxo diagnosticar/snapshot
+- [x] Solution scaffold (Core, Adapters.Windows, Cli, Gui, tests)
+- [x] Frozen contracts (`docs/CONTRACTS.md` v1.0.0) materialized in code
+- [x] Snapshots module — hardened JSON persistence, 12 tests
+- [x] Deterministic diagnostics — engine + 6 checks, spooler gating
+- [x] Repair + Policy Guard — RULE #1 encoded, contractual plan order
+- [x] Workflows — repair capture and execution with pre/post snapshot
+- [x] Windows adapters — full winspool.drv (gateway + executor)
+- [x] Full CLI (`list`, `snapshot`, `diagnose`, `repair`, `snapshots`)
+- [x] Avalonia GUI — main window with diagnose/snapshot flow
 
-**90/90 testes verdes** (Core.Tests) + **18/18** (Windows.Tests, mapeadores).
-- [x] Empacotamento portable win-x64 — `dist/` (gitignored) gera
-      `printer-rescue-v1.0.0-win-x64-portable.zip`: CLI publicada, README de uso,
-      SHA256SUMS. CI local verde: build Release 0 warnings + 108 testes.
+**90/90 tests green** (Core.Tests) + **18/18** (Windows.Tests, mappers).
+- [x] Portable win-x64 packaging — `dist/` (gitignored) produces
+      `printer-rescue-v1.0.0-win-x64-portable.zip`: published CLI, usage README,
+      SHA256SUMS. Local CI green: Release build 0 warnings + 108 tests.
 
-## O que falta (roadmap)
+## What is left (roadmap)
 
-| Marco | Escopo |
+| Milestone | Scope |
 |---|---|
-| M1 ✅ | Core completo com cobertura alta — entregue |
-| M2 ⏳ | Validação em máquina Windows real (P/Invoke, spooler, Driver Store) |
-| M3 ⏳ | Testes de integração da CLI contra gateway falso end-to-end |
-| M4 ⏳ | Fluxo de reparo completo na GUI (hoje: diagnosticar/snapshot; reparo via CLI) |
-| M5 ⏳ | Instalador MSIX/Store com declaração da política 10.2.4 |
-| v2 (decidir) | Painel central MSP multi-máquina; SKU portátil para técnico |
+| M1 ✅ | Full Core with high coverage — done |
+| M2 ⏳ | Validation on a real Windows machine (P/Invoke, spooler, Driver Store) |
+| M3 ⏳ | End-to-end CLI integration tests against a fake gateway |
+| M4 ⏳ | Full repair flow in the GUI (today: diagnose/snapshot; repair via CLI) |
+| M5 ⏳ | MSIX/Store installer with policy 10.2.4 declaration |
+| v2 (to decide) | Multi-machine MSP central dashboard; portable tech SKU |
 
-## Ideias e questões abertas
+## Open ideas and questions
 
-- Preço por endpoint/ano como modelo natural para MSP (decisão pendente).
-- Painel central multi-máquina: v2 ou nunca? (é o que traz custo de infra.)
-- Versão portátil para técnico como SKU separado?
+- Per-endpoint/year pricing as the natural model for MSPs (pending decision).
+- Multi-machine central dashboard: v2 or never? (that is what brings infra cost.)
+- Portable tech edition as a separate SKU?
 
-## Desenvolvimento
+## Development
 
 ```bash
-# Linux/macOS (valida Core + testes do Core)
+# Linux/macOS (validates Core + Core tests)
 ./build.sh
 
-# Completo (requer Windows para os adapters/GUI)
+# Full (requires Windows for adapters/GUI)
 dotnet build PrinterRescue.sln -c Release
 dotnet test  PrinterRescue.sln -c Release
 ```
 
 ---
 
-Criado por André Santo (forg3) | junkyardgoodies.app
+Created by forg3 · MIT License

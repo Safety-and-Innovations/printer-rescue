@@ -8,7 +8,7 @@ namespace PrinterRescue.Core.Tests.Diagnostics;
 public sealed class PortOpenCheckTests
 {
     [Fact]
-    public async Task RunAsyncComProtocoloUsbRetornaNotApplicable()
+    public async Task RunAsyncWithUsbProtocolReturnsNotApplicable()
     {
         var gateway = new FakePrintGateway();
         var check = new PortOpenCheck();
@@ -21,7 +21,7 @@ public sealed class PortOpenCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComProtocoloWsdRetornaNotApplicable()
+    public async Task RunAsyncWithWsdProtocolReturnsNotApplicable()
     {
         var gateway = new FakePrintGateway();
         var check = new PortOpenCheck();
@@ -32,40 +32,40 @@ public sealed class PortOpenCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncSemNomeDePortaRetornaFail()
+    public async Task RunAsyncWithoutPortNameReturnsFail()
     {
         var gateway = new FakePrintGateway();
-        var alvo = TestTargets.Tcp(portName: null);
+        var target = TestTargets.Tcp(portName: null);
         var check = new PortOpenCheck();
 
-        var outcome = await check.RunAsync(gateway, alvo);
+        var outcome = await check.RunAsync(gateway, target);
 
         Assert.Equal(CheckResult.Fail, outcome.Result);
         Assert.Equal(Severity.Error, outcome.Severity);
     }
 
     [Fact]
-    public async Task RunAsyncComConfiguracaoDePortaAusenteNoGatewayRetornaFail()
+    public async Task RunAsyncWithPortConfigMissingInGatewayReturnsFail()
     {
-        // gateway sem porta configurada (_port = null) para um alvo TCP
+        // gateway with no configured port (_port = null) for a TCP target
         var gateway = new FakePrintGateway();
         var check = new PortOpenCheck();
 
         var outcome = await check.RunAsync(gateway, TestTargets.Tcp());
 
         Assert.Equal(CheckResult.Fail, outcome.Result);
-        Assert.Contains("não encontrada", outcome.Detail);
+        Assert.Contains("not found", outcome.Detail);
     }
 
     [Fact]
-    public async Task RunAsyncComPortaOuvinteLocalRetornaPass()
+    public async Task RunAsyncWithLocalListeningPortReturnsPass()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var endpoint = (IPEndPoint)listener.LocalEndpoint;
 
         var gateway = new FakePrintGateway(
-            port: new PortConfig("PORTA_TESTE", "127.0.0.1", endpoint.Port, PrinterProtocol.TcpRaw));
+            port: new PortConfig("TEST_PORT", "127.0.0.1", endpoint.Port, PrinterProtocol.TcpRaw));
         var check = new PortOpenCheck();
 
         var outcome = await check.RunAsync(gateway, TestTargets.Tcp());
@@ -75,13 +75,13 @@ public sealed class PortOpenCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComPortaFechadaLocalRetornaFail()
+    public async Task RunAsyncWithLocalClosedPortReturnsFail()
     {
-        // porta livre garantidamente fechada (obtida e liberada)
-        var porta = ObterPortaLivreEFecha();
+        // guaranteed-closed free port (acquired then released)
+        var port = GetFreePortAndClose();
 
         var gateway = new FakePrintGateway(
-            port: new PortConfig("PORTA_FECHADA", "127.0.0.1", porta, PrinterProtocol.TcpRaw));
+            port: new PortConfig("CLOSED_PORT", "127.0.0.1", port, PrinterProtocol.TcpRaw));
         var check = new PortOpenCheck();
 
         var outcome = await check.RunAsync(gateway, TestTargets.Tcp());
@@ -89,12 +89,12 @@ public sealed class PortOpenCheckTests
         Assert.Equal(CheckResult.Fail, outcome.Result);
     }
 
-    private static int ObterPortaLivreEFecha()
+    private static int GetFreePortAndClose()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
-        var porta = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
-        return porta;
+        return port;
     }
 }

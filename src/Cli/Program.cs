@@ -12,9 +12,9 @@ using PrinterRescue.Core.Workflows;
 namespace PrinterRescue.Cli;
 
 /// <summary>
-/// Fachada fina do motor: composição do grafo de objetos e comandos
-/// list / snapshot / diagnose / repair / snapshots.
-/// Em não-Windows, apenas `snapshots list` opera (loca e multiplataforma).
+/// Thin engine facade: object-graph composition and the
+/// list / snapshot / diagnose / repair / snapshots commands.
+/// Off Windows, only `snapshots list` works (local and cross-platform).
 /// </summary>
 public static class Program
 {
@@ -30,12 +30,12 @@ public static class Program
         {
             if (args.Length == 0)
             {
-                Ajuda();
+                PrintHelp();
                 return (int)ExitCode.InvalidArguments;
             }
 
-            var raizSnapshots = CaminhoSnapshots();
-            var store = new SnapshotStore(raizSnapshots);
+            var snapshotRoot = GetSnapshotRoot();
+            var store = new SnapshotStore(snapshotRoot);
 
             switch (args[0].ToLowerInvariant())
             {
@@ -46,12 +46,12 @@ public static class Program
                         ? CmdSnapshotsList(store)
                         : await CmdSnapshotAsync(args, store).ConfigureAwait(false);
                 case "diagnose":
-                    return await ComWindowsAsync(c => CmdDiagnoseAsync(args, c)).ConfigureAwait(false);
+                    return await WithWindowsAsync(c => CmdDiagnoseAsync(args, c)).ConfigureAwait(false);
                 case "repair":
-                    return await ComWindowsAsync(c => CmdRepairAsync(args, c, store)).ConfigureAwait(false);
+                    return await WithWindowsAsync(c => CmdRepairAsync(args, c, store)).ConfigureAwait(false);
                 default:
-                    Console.Error.WriteLine($"Comando desconhecido: '{args[0]}'.");
-                    Ajuda();
+                    Console.Error.WriteLine($"Unknown command: '{args[0]}'.");
+                    PrintHelp();
                     return (int)ExitCode.InvalidArguments;
             }
         }
@@ -62,30 +62,30 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Erro: {ex.Message}");
+            Console.Error.WriteLine($"Error: {ex.Message}");
             return (int)ExitCode.UnhandledError;
         }
     }
 
-    // ---- Comandos -------------------------------------------------------------
+    // ---- Commands -------------------------------------------------------------
 
     private static async Task<int> CmdListAsync(string[] args)
     {
-        return await ComWindowsAsync(async ctx =>
+        return await WithWindowsAsync(async ctx =>
         {
-            var impressoras = await ctx.Gateway.ListPrintersAsync().ConfigureAwait(false);
-            if (TemFlag(args, "--json"))
+            var printers = await ctx.Gateway.ListPrintersAsync().ConfigureAwait(false);
+            if (HasFlag(args, "--json"))
             {
-                Console.WriteLine(JsonSerializer.Serialize(impressoras, JsonOpts));
+                Console.WriteLine(JsonSerializer.Serialize(printers, JsonOpts));
             }
             else
             {
-                foreach (var p in impressoras)
+                foreach (var p in printers)
                 {
-                    Console.WriteLine($"{p.Name}  [{p.Protocol}] porta={p.PortName ?? "-"} driver={p.DriverName ?? "-"}");
+                    Console.WriteLine($"{p.Name}  [{p.Protocol}] port={p.PortName ?? "-"} driver={p.DriverName ?? "-"}");
                 }
 
-                Console.WriteLine($"{impressoras.Count} impressora(s).");
+                Console.WriteLine($"{printers.Count} printer(s).");
             }
 
             return (int)ExitCode.Ok;
@@ -96,36 +96,36 @@ public static class Program
     {
         if (args.Length < 2)
         {
-            Console.Error.WriteLine("Uso: snapshot <nome-impressora>");
+            Console.Error.WriteLine("Usage: snapshot <printer-name>");
             return (int)ExitCode.InvalidArguments;
         }
 
-        return await ComWindowsAsync(async ctx =>
+        return await WithWindowsAsync(async ctx =>
         {
-            var alvo = await EncontrarAlvoAsync(ctx.Gateway, args[1]).ConfigureAwait(false);
-            if (alvo is null)
+            var target = await FindTargetAsync(ctx.Gateway, args[1]).ConfigureAwait(false);
+            if (target is null)
             {
-                Console.Error.WriteLine($"Impressora '{args[1]}' não encontrada.");
+                Console.Error.WriteLine($"Printer '{args[1]}' not found.");
                 return (int)ExitCode.InvalidArguments;
             }
 
             var capture = new CaptureWorkflow(ctx.Gateway);
-            var snap = await capture.CaptureAsync(alvo, SnapshotOrigin.Manual).ConfigureAwait(false);
+            var snap = await capture.CaptureAsync(target, SnapshotOrigin.Manual).ConfigureAwait(false);
             await store.SaveAsync(snap).ConfigureAwait(false);
-            Console.WriteLine($"Snapshot {snap.Id} gravado para '{alvo.Name}'.");
+            Console.WriteLine($"Snapshot {snap.Id} saved for '{target.Name}'.");
             return (int)ExitCode.Ok;
         }).ConfigureAwait(false);
     }
 
     private static int CmdSnapshotsList(SnapshotStore store)
     {
-        var lista = store.ListAsync().GetAwaiter().GetResult();
-        foreach (var s in lista)
+        var list = store.ListAsync().GetAwaiter().GetResult();
+        foreach (var s in list)
         {
             Console.WriteLine($"{s.Id}  {s.CreatedAtUtc:yyyy-MM-dd HH:mm:ss}  {s.Origin}  {s.PrinterName}");
         }
 
-        Console.WriteLine($"{lista.Count} snapshot(s).");
+        Console.WriteLine($"{list.Count} snapshot(s).");
         return (int)ExitCode.Ok;
     }
 
@@ -133,19 +133,19 @@ public static class Program
     {
         if (args.Length < 2)
         {
-            Console.Error.WriteLine("Uso: diagnose <nome-impressora> [--json]");
+            Console.Error.WriteLine("Usage: diagnose <printer-name> [--json]");
             return (int)ExitCode.InvalidArguments;
         }
 
-        var alvo = await EncontrarAlvoAsync(ctx.Gateway, args[1]).ConfigureAwait(false);
-        if (alvo is null)
+        var target = await FindTargetAsync(ctx.Gateway, args[1]).ConfigureAwait(false);
+        if (target is null)
         {
-            Console.Error.WriteLine($"Impressora '{args[1]}' não encontrada.");
+            Console.Error.WriteLine($"Printer '{args[1]}' not found.");
             return (int)ExitCode.InvalidArguments;
         }
 
-        var report = await ctx.Engine.DiagnoseAndPlanAsync(alvo).ConfigureAwait(false);
-        if (TemFlag(args, "--json"))
+        var report = await ctx.Engine.DiagnoseAndPlanAsync(target).ConfigureAwait(false);
+        if (HasFlag(args, "--json"))
         {
             Console.WriteLine(JsonSerializer.Serialize(report, JsonOpts));
         }
@@ -157,89 +157,89 @@ public static class Program
             }
 
             Console.WriteLine();
-            Console.WriteLine("Plano de reparo:");
+            Console.WriteLine("Repair plan:");
             if (report.Plan.Steps.Count == 0)
             {
-                Console.WriteLine("  (nada a fazer)");
+                Console.WriteLine("  (nothing to do)");
             }
             else
             {
-                foreach (var linha in OutputFormatter.Plano(report.Plan.Steps))
+                foreach (var line in OutputFormatter.Plan(report.Plan.Steps))
                 {
-                    Console.WriteLine($"  {linha}");
+                    Console.WriteLine($"  {line}");
                 }
             }
         }
 
-        return (int)ExitCodeMapper.DeDiagnostico(report.Checks);
+        return (int)ExitCodeMapper.FromDiagnostics(report.Checks);
     }
 
     private static async Task<int> CmdRepairAsync(string[] args, CompositionContext ctx, SnapshotStore store)
     {
         if (args.Length < 2)
         {
-            Console.Error.WriteLine("Uso: repair <nome-impressora> [--yes]");
+            Console.Error.WriteLine("Usage: repair <printer-name> [--yes]");
             return (int)ExitCode.InvalidArguments;
         }
 
-        var alvo = await EncontrarAlvoAsync(ctx.Gateway, args[1]).ConfigureAwait(false);
-        if (alvo is null)
+        var target = await FindTargetAsync(ctx.Gateway, args[1]).ConfigureAwait(false);
+        if (target is null)
         {
-            Console.Error.WriteLine($"Impressora '{args[1]}' não encontrada.");
+            Console.Error.WriteLine($"Printer '{args[1]}' not found.");
             return (int)ExitCode.InvalidArguments;
         }
 
-        var report = await ctx.Engine.DiagnoseAndPlanAsync(alvo).ConfigureAwait(false);
-        if (!TemFlag(args, "--yes"))
+        var report = await ctx.Engine.DiagnoseAndPlanAsync(target).ConfigureAwait(false);
+        if (!HasFlag(args, "--yes"))
         {
-            Console.WriteLine("Dry-run — plano que seria executado:");
+            Console.WriteLine("Dry-run — plan that would run:");
             if (report.Plan.Steps.Count == 0)
             {
-                Console.WriteLine("  (nada a fazer)");
+                Console.WriteLine("  (nothing to do)");
             }
             else
             {
-                foreach (var linha in OutputFormatter.Plano(report.Plan.Steps))
+                foreach (var line in OutputFormatter.Plan(report.Plan.Steps))
                 {
-                    Console.WriteLine($"  {linha}");
+                    Console.WriteLine($"  {line}");
                 }
             }
 
-            Console.WriteLine("Execute novamente com --yes para aplicar.");
+            Console.WriteLine("Run again with --yes to apply.");
             return (int)ExitCode.Ok;
         }
 
-        var lastGood = await store.FindLatestForAsync(alvo.Name).ConfigureAwait(false);
+        var lastGood = await store.FindLatestForAsync(target.Name).ConfigureAwait(false);
         if (lastGood is null && report.Plan.Steps.Any(s => s.Destructive))
         {
-            Console.Error.WriteLine("Nenhum snapshot anterior — passos destrutivos serão pulados (SkippedNoSnapshot).");
+            Console.Error.WriteLine("No prior snapshot — destructive steps will be skipped (SkippedNoSnapshot).");
         }
 
         var guard = new PolicyGuard();
         IRepairExecutor executor = OperatingSystem.IsWindows()
             ? new WindowsRepairExecutor()
-            : throw new PlatformNotSupportedException("Execução de reparo requer Windows.");
+            : throw new PlatformNotSupportedException("Repair execution requires Windows.");
 
         var workflow = new RepairWorkflow(executor, guard, store, new CaptureWorkflow(ctx.Gateway));
-        var resultados = await workflow.RunAsync(report.Plan, lastGood).ConfigureAwait(false);
+        var results = await workflow.RunAsync(report.Plan, lastGood).ConfigureAwait(false);
 
-        foreach (var r in resultados)
+        foreach (var r in results)
         {
             Console.WriteLine($"[{r.Status}] {r.Kind}: {r.Detail}");
         }
 
-        return (int)ExitCodeMapper.DeReparo(resultados);
+        return (int)ExitCodeMapper.FromRepair(results);
     }
 
-    // ---- Composição ------------------------------------------------------------
+    // ---- Composition ------------------------------------------------------------
 
     private sealed record CompositionContext(IPrintSystemGateway Gateway, DiagnosticEngine Engine);
 
-    private static async Task<int> ComWindowsAsync(Func<CompositionContext, Task<int>> corpo)
+    private static async Task<int> WithWindowsAsync(Func<CompositionContext, Task<int>> body)
     {
         if (!OperatingSystem.IsWindows())
         {
-            Console.Error.WriteLine("Este comando requer Windows (acesso ao subsistema de impressão).");
+            Console.Error.WriteLine("This command requires Windows (print subsystem access).");
             return (int)ExitCode.InvalidArguments;
         }
 
@@ -254,20 +254,20 @@ public static class Program
             new NoDuplicateInstallCheck(),
         ];
         var engine = new DiagnosticEngine(gateway, checks, new RepairPlanner());
-        return await corpo(new CompositionContext(gateway, engine)).ConfigureAwait(false);
+        return await body(new CompositionContext(gateway, engine)).ConfigureAwait(false);
     }
 
-    private static async Task<PrinterTarget?> EncontrarAlvoAsync(IPrintSystemGateway gateway, string nome)
+    private static async Task<PrinterTarget?> FindTargetAsync(IPrintSystemGateway gateway, string name)
     {
-        var impressoras = await gateway.ListPrintersAsync().ConfigureAwait(false);
-        return impressoras.FirstOrDefault(p =>
-            string.Equals(p.Name, nome, StringComparison.OrdinalIgnoreCase));
+        var printers = await gateway.ListPrintersAsync().ConfigureAwait(false);
+        return printers.FirstOrDefault(p =>
+            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool TemFlag(string[] args, string flag)
+    private static bool HasFlag(string[] args, string flag)
         => args.Contains(flag, StringComparer.OrdinalIgnoreCase);
 
-    internal static string CaminhoSnapshots()
+    internal static string GetSnapshotRoot()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -275,27 +275,27 @@ public static class Program
             return Path.Combine(programData, "PrinterRescue", "snapshots");
         }
 
-        // Desenvolvimento em Linux/macOS: raiz local equivalente.
+        // Development on Linux/macOS: equivalent local root.
         return Path.Combine(
             Environment.GetEnvironmentVariable("XDG_DATA_HOME")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share"),
             "PrinterRescue", "snapshots");
     }
 
-    private static void Ajuda()
+    private static void PrintHelp()
     {
         Console.WriteLine("""
-            Printer Rescue — restaura o estado funcional da sua impressora.
+            Printer Rescue — restores your printer to working order.
 
-            Uso:
-              printer-rescue list                          Lista impressoras instaladas
-              printer-rescue snapshot <nome>               Grava snapshot do estado atual
-              printer-rescue snapshot list                 Lista snapshots gravados
-              printer-rescue diagnose <nome> [--json]      Diagnóstico determinístico + plano
-              printer-rescue repair <nome> [--yes]         Dry-run; com --yes aplica o reparo
+            Usage:
+              printer-rescue list                          List installed printers
+              printer-rescue snapshot <name>               Save a snapshot of the current state
+              printer-rescue snapshot list                 List saved snapshots
+              printer-rescue diagnose <name> [--json]      Deterministic diagnostics + plan
+              printer-rescue repair <name> [--yes]         Dry-run; with --yes applies the repair
 
-            REGRA Nº 1: este programa nunca baixa nem distribui drivers. Reinstala usando
-            apenas o driver já presente na máquina ou o Microsoft IPP Class Driver.
+            RULE #1: this program never downloads or distributes drivers. It reinstalls using
+            only the driver already present on the machine or the Microsoft IPP Class Driver.
             """);
     }
 }

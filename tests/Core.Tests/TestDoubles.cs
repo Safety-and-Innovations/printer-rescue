@@ -2,7 +2,7 @@ using PrinterRescue.Core.Interfaces;
 
 namespace PrinterRescue.Core.Tests;
 
-/// <summary>Gateway falso para testes: comportamento configurável por chamada.</summary>
+/// <summary>Fake gateway for tests: configurable per-call behavior.</summary>
 public sealed class FakePrintGateway : IPrintSystemGateway
 {
     private readonly IReadOnlyList<PrinterTarget> _printers;
@@ -18,11 +18,11 @@ public sealed class FakePrintGateway : IPrintSystemGateway
     {
         _printers = printers ?? [];
         _port = port;
-        _queue = queue ?? new QueueState("Fila", Exists: true, StuckJobs: 0, DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true);
+        _queue = queue ?? new QueueState("Queue", Exists: true, StuckJobs: 0, DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true);
         _driver = driver;
     }
 
-    /// <summary>Quando definido, ListPrintersAsync lança esta exceção (spooler inacessível).</summary>
+    /// <summary>When set, ListPrintersAsync throws this exception (spooler unreachable).</summary>
     public Exception? ListPrintersError { get; init; }
 
     public int ListPrintersCalls { get; private set; }
@@ -54,20 +54,20 @@ public sealed class FakePrintGateway : IPrintSystemGateway
         => Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
 }
 
-/// <summary>Fábrica de fixtures para testes de diagnóstico.</summary>
+/// <summary>Fixture factory for diagnostic tests.</summary>
 public static class TestTargets
 {
-    public const string NomePadrao = "HP LaserJet Pro";
+    public const string DefaultName = "HP LaserJet Pro";
 
-    public static PrinterTarget Tcp(string name = NomePadrao, string? portName = "IP_192.168.0.40")
+    public static PrinterTarget Tcp(string name = DefaultName, string? portName = "IP_192.168.0.40")
         => new(Name: name, ShareName: null, PortName: portName, Protocol: PrinterProtocol.TcpRaw,
                DeviceId: null, DriverName: "HP Universal PCL6", DriverVersion: "3.12.0.0");
 
-    public static PrinterTarget Usb(string name = NomePadrao)
+    public static PrinterTarget Usb(string name = DefaultName)
         => new(Name: name, ShareName: null, PortName: "USB001", Protocol: PrinterProtocol.Usb,
                DeviceId: null, DriverName: "HP Universal PCL6", DriverVersion: "3.12.0.0");
 
-    public static PrinterTarget Wsd(string name = NomePadrao)
+    public static PrinterTarget Wsd(string name = DefaultName)
         => new(Name: name, ShareName: null, PortName: "WSD-001", Protocol: PrinterProtocol.Wsd,
                DeviceId: null, DriverName: "HP Universal PCL6", DriverVersion: "3.12.0.0");
 }

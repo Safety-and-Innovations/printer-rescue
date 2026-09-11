@@ -6,10 +6,10 @@ namespace PrinterRescue.Core.Tests.Diagnostics;
 public sealed class QueueNotStuckCheckTests
 {
     [Fact]
-    public async Task RunAsyncSemTrabalhosPresosRetornaPass()
+    public async Task RunAsyncWithoutStuckJobsReturnsPass()
     {
         var gateway = new FakePrintGateway(queue: new QueueState(
-            TestTargets.NomePadrao, Exists: true, StuckJobs: 0,
+            TestTargets.DefaultName, Exists: true, StuckJobs: 0,
             DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true));
         var check = new QueueNotStuckCheck();
 
@@ -21,10 +21,10 @@ public sealed class QueueNotStuckCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComTrabalhosPresosRetornaWarn()
+    public async Task RunAsyncWithStuckJobsReturnsWarn()
     {
         var gateway = new FakePrintGateway(queue: new QueueState(
-            TestTargets.NomePadrao, Exists: true, StuckJobs: 3,
+            TestTargets.DefaultName, Exists: true, StuckJobs: 3,
             DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true));
         var check = new QueueNotStuckCheck();
 
@@ -36,7 +36,7 @@ public sealed class QueueNotStuckCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComGatewayNuloLancaArgumentNull()
+    public async Task RunAsyncWithNullGatewayThrowsArgumentNull()
     {
         var check = new QueueNotStuckCheck();
 

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace PrinterRescue.Core.Tests.Policy;
 
-/// <summary>Testes da guarda de conformidade — REGRA Nº 1 (nunca baixar, hospedar ou distribuir driver).</summary>
+/// <summary>Compliance guard tests — RULE #1 (never download, host, or distribute drivers).</summary>
 public sealed class PolicyGuardTests
 {
     private readonly PolicyGuard _guard = new();
@@ -17,14 +17,14 @@ public sealed class PolicyGuardTests
     [InlineData(RepairActionKind.ReinstallWithIppClassDriver)]
     [InlineData(RepairActionKind.ReinstallFromDriverStore)]
     [InlineData(RepairActionKind.RemoveBrokenInstall)]
-    public void EvaluateComSnapshotEPadraoSaoPermitidos(RepairActionKind kind)
+    public void EvaluateWithSnapshotAndDefaultsAreAllowed(RepairActionKind kind)
     {
-        var passo = new RepairStep(kind, "Executar procedimento local de manutencao da impressora.", Destructive: false, RequiresElevation: false);
+        var step = new RepairStep(kind, "Perform local printer maintenance procedure.", Destructive: false, RequiresElevation: false);
 
-        var decisao = _guard.Evaluate(passo, CriarSnapshot());
+        var decision = _guard.Evaluate(step, CreateSnapshot());
 
-        Assert.True(decisao.Allowed);
-        Assert.False(string.IsNullOrWhiteSpace(decisao.Reason));
+        Assert.True(decision.Allowed);
+        Assert.False(string.IsNullOrWhiteSpace(decision.Reason));
     }
 
     [Theory]
@@ -35,65 +35,65 @@ public sealed class PolicyGuardTests
     [InlineData("Reinstalar usando catalogo de driver da web")]
     [InlineData("Instalar driver externo assinado pelo fabricante")]
     [InlineData("Rotina que vai Baixar e Hospedar driver no compartilhamento")]
-    public void EvaluateNegaDescricaoComTermoDeDistribuicaoDeDriver(string descricao)
+    public void EvaluateDeniesDescriptionWithDriverDistributionTerm(string description)
     {
-        var passo = new RepairStep(RepairActionKind.ReinstallFromDriverStore, descricao, Destructive: true, RequiresElevation: true);
+        var step = new RepairStep(RepairActionKind.ReinstallFromDriverStore, description, Destructive: true, RequiresElevation: true);
 
-        var decisao = _guard.Evaluate(passo, CriarSnapshot());
+        var decision = _guard.Evaluate(step, CreateSnapshot());
 
-        Assert.False(decisao.Allowed);
-        Assert.Contains("REGRA", decisao.Reason);
+        Assert.False(decision.Allowed);
+        Assert.Contains("RULE", decision.Reason);
     }
 
     [Fact]
-    public void EvaluateNegaIndependenteDoKindQuandoDescricaoEVetor()
+    public void EvaluateDeniesRegardlessOfKindWhenDescriptionIsVector()
     {
-        // Kind desconhecido fora do enum nao existe em C#; o vetor principal de violacao e a Description.
-        var passo = new RepairStep(
+        // Unknown Kind values outside the enum do not exist in C#; the main violation vector is the Description.
+        var step = new RepairStep(
             RepairActionKind.RestoreDefaults,
-            "Publicar driver: hospedar driver em repositorio online e distribuir driver as filiais.",
+            "Publish driver: hospedar driver in an online repository and distribuir driver to branches.",
             Destructive: false,
             RequiresElevation: false);
 
-        var decisao = _guard.Evaluate(passo, CriarSnapshot());
+        var decision = _guard.Evaluate(step, CreateSnapshot());
 
-        Assert.False(decisao.Allowed);
+        Assert.False(decision.Allowed);
     }
 
     [Fact]
-    public void EvaluateNegacaoInformaOTermoDetectado()
+    public void EvaluateDenialReportsDetectedTerm()
     {
-        var passo = new RepairStep(RepairActionKind.ClearQueue, "Rotina que vai baixar driver antes de limpar a fila.", Destructive: false, RequiresElevation: false);
+        var step = new RepairStep(RepairActionKind.ClearQueue, "Routine that will baixar driver before clearing the queue.", Destructive: false, RequiresElevation: false);
 
-        var decisao = _guard.Evaluate(passo, CriarSnapshot());
+        var decision = _guard.Evaluate(step, CreateSnapshot());
 
-        Assert.False(decisao.Allowed);
-        Assert.Contains("baixar", decisao.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.False(decision.Allowed);
+        Assert.Contains("baixar", decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void EvaluateNaoDependeDoSnapshotParaDecidir()
+    public void EvaluateDoesNotDependOnSnapshotToDecide()
     {
-        var passoSeguro = new RepairStep(RepairActionKind.ClearQueue, "Limpar a fila de impressao.", Destructive: false, RequiresElevation: false);
-        var passoProibido = new RepairStep(RepairActionKind.ClearQueue, "Baixar driver antes de limpar a fila.", Destructive: false, RequiresElevation: false);
+        var safeStep = new RepairStep(RepairActionKind.ClearQueue, "Clear the print queue.", Destructive: false, RequiresElevation: false);
+        var forbiddenStep = new RepairStep(RepairActionKind.ClearQueue, "Baixar driver before clearing the queue.", Destructive: false, RequiresElevation: false);
 
-        var permitido = _guard.Evaluate(passoSeguro, CriarSnapshot());
-        var negado = _guard.Evaluate(passoProibido, CriarSnapshot());
+        var allowed = _guard.Evaluate(safeStep, CreateSnapshot());
+        var denied = _guard.Evaluate(forbiddenStep, CreateSnapshot());
 
-        Assert.True(permitido.Allowed);
-        Assert.False(negado.Allowed);
+        Assert.True(allowed.Allowed);
+        Assert.False(denied.Allowed);
     }
 
-    private static PrinterSnapshot CriarSnapshot()
+    private static PrinterSnapshot CreateSnapshot()
     {
-        var alvo = TestTargets.Tcp();
+        var target = TestTargets.Tcp();
         return new PrinterSnapshot(
             Id: Guid.NewGuid(),
             CreatedAtUtc: DateTime.UtcNow,
             Origin: SnapshotOrigin.PreRepair,
-            Target: alvo,
+            Target: target,
             Port: new PortConfig("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw),
-            Queue: new QueueState(alvo.Name, Exists: true, StuckJobs: 0, DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true),
+            Queue: new QueueState(target.Name, Exists: true, StuckJobs: 0, DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true),
             Driver: new DriverInfo("HP Universal PCL6", "3.12.0.0", InfName: null, PresentInDriverStore: true, IsIppClassDriver: false),
             Permissions: new Dictionary<string, string>(),
             Defaults: new Dictionary<string, string>(),

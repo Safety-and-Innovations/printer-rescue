@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core.Interfaces;
 
-/// <summary>Verificação determinística individual do diagnóstico.</summary>
+/// <summary>Individual deterministic diagnostic check.</summary>
 public interface IDiagnosticCheck
 {
     global::PrinterRescue.Core.CheckId Id { get; }

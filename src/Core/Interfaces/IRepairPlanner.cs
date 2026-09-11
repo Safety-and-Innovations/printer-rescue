@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core.Interfaces;
 
-/// <summary>Converte falhas de diagnóstico em plano de reparo ordenado.</summary>
+/// <summary>Converts diagnostic failures into an ordered repair plan.</summary>
 public interface IRepairPlanner
 {
     global::PrinterRescue.Core.RepairPlan PlanRepairs(

@@ -3,8 +3,8 @@ namespace PrinterRescue.Core.Interfaces;
 public sealed record PolicyDecision(bool Allowed, string Reason);
 
 /// <summary>
-/// Guarda de conformidade (REGRA Nº 1): bloqueia qualquer passo que implique
-/// baixar, hospedar, indexar ou distribuir driver de impressora.
+/// Compliance guard (RULE #1): blocks any step that implies
+/// downloading, hosting, indexing, or distributing printer drivers.
 /// </summary>
 public interface IPolicyGuard
 {

@@ -3,16 +3,16 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Repair;
 
 /// <summary>
-/// Converte falhas de diagnóstico em plano de reparo ordenado e conservador.
-/// Contrato: ClearQueue &lt; RestartSpooler &lt; RestorePort &lt; Reinstall* &lt; RemoveBrokenInstall.
-/// Passo destrutivo só entra no plano quando existe snapshot válido (lastGood) para reversão;
-/// sem snapshot, os candidatos destrutivos são marcados SkippedNoSnapshot na descrição do plano.
-/// As descrições geradas nunca mencionam obtenção ou distribuição de driver (REGRA Nº 1).
+/// Converts diagnostic failures into an ordered, conservative repair plan.
+/// Contract: ClearQueue &lt; RestartSpooler &lt; RestorePort &lt; Reinstall* &lt; RemoveBrokenInstall.
+/// A destructive step only enters the plan when a valid snapshot (lastGood) exists for rollback;
+/// without a snapshot, destructive candidates are flagged SkippedNoSnapshot in the plan description.
+/// Generated descriptions never mention driver acquisition or distribution (RULE #1).
 /// </summary>
 public sealed class RepairPlanner : IRepairPlanner
 {
-    /// <summary>Ordem global contratual de execução dos passos.</summary>
-    private static readonly RepairActionKind[] OrdemGlobal =
+    /// <summary>Contractual global execution order of steps.</summary>
+    private static readonly RepairActionKind[] GlobalOrder =
     [
         RepairActionKind.ClearQueue,
         RepairActionKind.RestartSpooler,
@@ -29,92 +29,92 @@ public sealed class RepairPlanner : IRepairPlanner
     {
         ArgumentNullException.ThrowIfNull(report);
 
-        var candidatos = new List<RepairStep>();
-        var pendencias = new List<string>();
+        var candidates = new List<RepairStep>();
+        var pendingNotes = new List<string>();
 
-        if (Resultado(report, CheckId.QueueNotStuck) is CheckResult.Warn or CheckResult.Fail)
+        if (GetResult(report, CheckId.QueueNotStuck) is CheckResult.Warn or CheckResult.Fail)
         {
-            candidatos.Add(new RepairStep(
+            candidates.Add(new RepairStep(
                 RepairActionKind.ClearQueue,
-                "Limpar a fila de impressão removendo os trabalhos presos.",
+                "Clear the print queue by removing the stuck jobs.",
                 Destructive: false,
                 RequiresElevation: false));
-            candidatos.Add(new RepairStep(
+            candidates.Add(new RepairStep(
                 RepairActionKind.RestartSpooler,
-                "Reiniciar o serviço Print Spooler do Windows.",
+                "Restart the Windows Print Spooler service.",
                 Destructive: false,
                 RequiresElevation: true));
         }
 
-        if (Resultado(report, CheckId.PortOpen) == CheckResult.Fail)
+        if (GetResult(report, CheckId.PortOpen) == CheckResult.Fail)
         {
-            if (lastGood?.Port is { } portaBoa)
+            if (lastGood?.Port is { } goodPort)
             {
-                candidatos.Add(new RepairStep(
+                candidates.Add(new RepairStep(
                     RepairActionKind.RestorePort,
-                    $"Restaurar a porta '{portaBoa.PortName}' ({portaBoa.HostAddress}:{portaBoa.PortNumber}, protocolo {portaBoa.Protocol}) conforme o snapshot válido.",
+                    $"Restore port '{goodPort.PortName}' ({goodPort.HostAddress}:{goodPort.PortNumber}, protocol {goodPort.Protocol}) from the valid snapshot.",
                     Destructive: false,
                     RequiresElevation: true));
             }
             else
             {
-                pendencias.Add("[SkippedNoSnapshot] RestorePort não planejado: restauração de porta exige snapshot válido.");
+                pendingNotes.Add("[SkippedNoSnapshot] RestorePort not planned: port restore requires a valid snapshot.");
             }
         }
 
-        if (Resultado(report, CheckId.DriverPresent) == CheckResult.Fail)
+        if (GetResult(report, CheckId.DriverPresent) == CheckResult.Fail)
         {
             if (lastGood is not null)
             {
-                candidatos.Add(new RepairStep(
+                candidates.Add(new RepairStep(
                     RepairActionKind.ReinstallWithIppClassDriver,
-                    "Reinstalar a impressora usando o driver de classe IPP nativo do sistema operacional.",
+                    "Reinstall the printer using the operating system's native IPP class driver.",
                     Destructive: true,
                     RequiresElevation: true));
-                candidatos.Add(new RepairStep(
+                candidates.Add(new RepairStep(
                     RepairActionKind.ReinstallFromDriverStore,
-                    "Reinstalar a impressora a partir do Driver Store local da máquina, sem acesso à rede externa.",
+                    "Reinstall the printer from the machine's local driver store, with no external network access.",
                     Destructive: true,
                     RequiresElevation: true));
-                candidatos.Add(new RepairStep(
+                candidates.Add(new RepairStep(
                     RepairActionKind.RemoveBrokenInstall,
-                    "Remover do sistema a instalação danificada da impressora, preservando o snapshot para reversão.",
+                    "Remove the printer's broken installation from the system, keeping the snapshot for rollback.",
                     Destructive: true,
                     RequiresElevation: true));
             }
             else
             {
-                pendencias.Add("[SkippedNoSnapshot] ReinstallWithIppClassDriver e ReinstallFromDriverStore não planejados: reinstalação destrutiva exige snapshot válido.");
-                pendencias.Add("[SkippedNoSnapshot] RemoveBrokenInstall suprimido: remoção destrutiva exige snapshot válido.");
+                pendingNotes.Add("[SkippedNoSnapshot] ReinstallWithIppClassDriver and ReinstallFromDriverStore not planned: destructive reinstall requires a valid snapshot.");
+                pendingNotes.Add("[SkippedNoSnapshot] RemoveBrokenInstall suppressed: destructive removal requires a valid snapshot.");
             }
         }
 
-        var ordenados = candidatos
-            .OrderBy(static s => Array.IndexOf(OrdemGlobal, s.Kind))
+        var ordered = candidates
+            .OrderBy(static s => Array.IndexOf(GlobalOrder, s.Kind))
             .ToList();
 
-        if (pendencias.Count > 0)
+        if (pendingNotes.Count > 0)
         {
-            var nota = $" {string.Join(" ", pendencias)}";
-            if (ordenados.Count > 0)
+            var note = $" {string.Join(" ", pendingNotes)}";
+            if (ordered.Count > 0)
             {
-                var ultimo = ordenados[^1];
-                ordenados[^1] = ultimo with { Description = $"{ultimo.Description}{nota}" };
+                var last = ordered[^1];
+                ordered[^1] = last with { Description = $"{last.Description}{note}" };
             }
             else
             {
-                // Plano sem passos executáveis: registra a pendência como entrada informativa.
-                ordenados.Add(new RepairStep(
+                // Plan with no runnable steps: record the pending note as an informational entry.
+                ordered.Add(new RepairStep(
                     RepairActionKind.RestoreDefaults,
-                    $"Nenhum passo executável neste plano.{nota}",
+                    $"No runnable steps in this plan.{note}",
                     Destructive: false,
                     RequiresElevation: false));
             }
         }
 
-        return new RepairPlan(report.TargetId, ordenados, ordenados.Any(static s => s.RequiresElevation));
+        return new RepairPlan(report.TargetId, ordered, ordered.Any(static s => s.RequiresElevation));
     }
 
-    private static CheckResult Resultado(DiagnosticReport report, CheckId id)
+    private static CheckResult GetResult(DiagnosticReport report, CheckId id)
         => report.Checks.FirstOrDefault(c => c.Id == id)?.Result ?? CheckResult.NotApplicable;
 }

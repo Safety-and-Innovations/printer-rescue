@@ -4,20 +4,20 @@ using PrinterRescue.Core;
 namespace PrinterRescue.Adapters.Windows.Winspool;
 
 /// <summary>
-/// Lógica pura de mapeamento entre estruturas nativas do winspool.drv e os
-/// modelos do Core. Métodos estáticos, determinísticos e testáveis em qualquer SO —
-/// o P/Invoke real (só executa no Windows) fica em WinspoolNative.
+/// Pure mapping logic between the native winspool.drv structures and the
+/// Core models. Static, deterministic methods testable on any OS —
+/// the real P/Invoke (Windows-only at runtime) lives in WinspoolNative.
 /// </summary>
 public static class Mappers
 {
-    // Flags de JOB_STATUS que caracterizam trabalho preso/bloqueado.
+    // JOB_STATUS flags that mark a stuck/blocked job.
     private const uint JobStatusError = 0x0000_0002;
     private const uint JobStatusBlockedDevQueue = 0x0000_0400;
     private const uint JobStatusRetained = 0x0000_0800;
-    private static readonly TimeSpan IdadePreso = TimeSpan.FromHours(24);
+    private static readonly TimeSpan StuckAge = TimeSpan.FromHours(24);
 
-    /// <summary>Infere o protocolo pelo prefixo do nome da porta (convenções do Windows).</summary>
-    public static PrinterProtocol InferirProtocolo(string? portName)
+    /// <summary>Infers the protocol from the port-name prefix (Windows conventions).</summary>
+    public static PrinterProtocol InferProtocol(string? portName)
     {
         if (string.IsNullOrEmpty(portName))
         {
@@ -38,35 +38,35 @@ public static class Mappers
     }
 
     /// <summary>
-    /// Deriva a configuração de porta TCP a partir do nome padrão do Windows:
-    /// "IP_host" usa 9100; "IP_host_porta" usa a porta explícita (e protocolo IPP para 631).
-    /// Retorna null quando o nome não é uma porta TCP/IP.
+    /// Derives the TCP port configuration from the default Windows name:
+    /// "IP_host" uses 9100; "IP_host_port" uses the explicit port (and IPP for 631).
+    /// Returns null when the name is not a TCP/IP port.
     /// </summary>
-    public static PortConfig? DerivarPortConfig(string? portName)
+    public static PortConfig? DerivePortConfig(string? portName)
     {
         if (string.IsNullOrWhiteSpace(portName) || !portName.StartsWith("IP_", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var partes = portName[3..].Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (partes.Length == 0)
+        var parts = portName[3..].Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
         {
             return null;
         }
 
-        var host = partes[0];
-        var numero = partes.Length > 1 && int.TryParse(partes[1], out var p) ? p : 9100;
-        var protocolo = numero == 631 ? PrinterProtocol.Ipp : PrinterProtocol.TcpRaw;
+        var host = parts[0];
+        var number = parts.Length > 1 && int.TryParse(parts[1], out var p) ? p : 9100;
+        var protocol = number == 631 ? PrinterProtocol.Ipp : PrinterProtocol.TcpRaw;
 
-        return new PortConfig(portName, host, numero, protocolo);
+        return new PortConfig(portName, host, number, protocol);
     }
 
     /// <summary>
-    /// Heurística de trabalho preso: flag de erro/bloqueio/retenção, ou qualquer
-    /// trabalho com mais de 24 h na fila sem status ativo de impressão.
+    /// Stuck-job heuristic: error/blocked/retained flag, or any job
+    /// older than 24 h in the queue with no active printing status.
     /// </summary>
-    public static bool JobPreso(uint status, DateTime submetidoEmUtc, DateTime agoraUtc)
+    public static bool IsJobStuck(uint status, DateTime submittedUtc, DateTime nowUtc)
     {
         const uint JobStatusPrinting = 0x0000_0004;
         if ((status & (JobStatusError | JobStatusBlockedDevQueue | JobStatusRetained)) != 0)
@@ -74,7 +74,7 @@ public static class Mappers
             return true;
         }
 
-        if (agoraUtc - submetidoEmUtc > IdadePreso && (status & JobStatusPrinting) == 0)
+        if (nowUtc - submittedUtc > StuckAge && (status & JobStatusPrinting) == 0)
         {
             return true;
         }
@@ -83,10 +83,10 @@ public static class Mappers
     }
 
     /// <summary>
-    /// Mapeia os campos relevantes do DEVMODE para os padrões gravados no snapshot.
-    /// Valores zero/ausentes viram neutros (nunca grava "0 cópias").
+    /// Maps the relevant DEVMODE fields to the defaults recorded in the snapshot.
+    /// Zero/missing values become neutral (never records "0 copies").
     /// </summary>
-    public static IReadOnlyDictionary<string, string> MapearDefaults(int paperSize, int copies, int color, int duplex)
+    public static IReadOnlyDictionary<string, string> MapDefaults(int paperSize, int copies, int color, int duplex)
     {
         var d = new Dictionary<string, string>
         {
@@ -98,7 +98,7 @@ public static class Mappers
         return d;
     }
 
-    /// <summary>Detecta o driver de classe IPP nativo pelo nome (REGRA Nº 1: é o preferido na reinstalação).</summary>
-    public static bool EhIppClassDriver(string driverName)
+    /// <summary>Detects the native IPP class driver by name (RULE #1: it is the reinstall favorite).</summary>
+    public static bool IsIppClassDriver(string driverName)
         => driverName.Contains("ipp class driver", StringComparison.OrdinalIgnoreCase);
 }

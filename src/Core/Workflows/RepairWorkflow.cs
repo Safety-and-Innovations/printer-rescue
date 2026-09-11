@@ -3,10 +3,10 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Workflows;
 
 /// <summary>
-/// Executa um plano de reparo passo a passo com as garantias do produto:
-/// guarda de política antes de tudo (REGRA Nº 1), elevação obrigatória para
-/// passos que a exigem, snapshot pré-reparo antes do primeiro passo destrutivo
-/// e snapshot pós-reparo único se algo foi aplicado.
+/// Runs a repair plan step by step with the product guarantees:
+/// policy guard first (RULE #1), mandatory elevation for
+/// steps that require it, a pre-repair snapshot before the first destructive step,
+/// and a single post-repair snapshot if anything was applied.
 /// </summary>
 public sealed class RepairWorkflow
 {
@@ -29,81 +29,81 @@ public sealed class RepairWorkflow
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        var resultados = new List<RepairOutcome>();
-        var capturaPreFeita = false;
-        var aplicouAlgo = false;
+        var results = new List<RepairOutcome>();
+        var preCaptureDone = false;
+        var appliedAny = false;
 
-        foreach (var passo in plan.Steps)
+        foreach (var step in plan.Steps)
         {
             ct.ThrowIfCancellationRequested();
 
-            // 1. Política primeiro: nada executa sem passar pela REGRA Nº 1.
-            var decisao = _guard.Evaluate(passo, lastGood ?? SemContexto());
-            if (!decisao.Allowed)
+            // 1. Policy first: nothing runs without passing RULE #1.
+            var decision = _guard.Evaluate(step, lastGood ?? EmptyContext());
+            if (!decision.Allowed)
             {
-                resultados.Add(SemExecucao(plan, passo, RepairStatus.SkippedPolicyViolation, decisao.Reason));
+                results.Add(WithoutExecution(plan, step, RepairStatus.SkippedPolicyViolation, decision.Reason));
                 continue;
             }
 
-            // 2. Elevação: passo que exige admin sem tê-la falha antes de executar.
-            if (passo.RequiresElevation && !_executor.IsElevated())
+            // 2. Elevation: a step requiring admin without it fails before running.
+            if (step.RequiresElevation && !_executor.IsElevated())
             {
-                resultados.Add(SemExecucao(plan, passo, RepairStatus.Failed,
-                    $"Passo '{passo.Kind}' exige privilégio administrativo e o processo não está elevado."));
+                results.Add(WithoutExecution(plan, step, RepairStatus.Failed,
+                    $"Step '{step.Kind}' requires administrative privilege and the process is not elevated."));
                 continue;
             }
 
-            // 3. Destrutivo exige snapshot válido para reversão.
-            if (passo.Destructive && lastGood is null)
+            // 3. Destructive steps require a valid snapshot for rollback.
+            if (step.Destructive && lastGood is null)
             {
-                resultados.Add(SemExecucao(plan, passo, RepairStatus.SkippedNoSnapshot,
-                    $"[SkippedNoSnapshot] Passo destrutivo '{passo.Kind}' exige snapshot válido anterior."));
+                results.Add(WithoutExecution(plan, step, RepairStatus.SkippedNoSnapshot,
+                    $"[SkippedNoSnapshot] Destructive step '{step.Kind}' requires a prior valid snapshot."));
                 continue;
             }
 
-            // 4. Antes do primeiro passo destrutivo: grava snapshot pré-reparo uma única vez.
-            if (passo.Destructive && !capturaPreFeita && lastGood is not null)
+            // 4. Before the first destructive step: record the pre-repair snapshot exactly once.
+            if (step.Destructive && !preCaptureDone && lastGood is not null)
             {
-                await CapturarAsync(lastGood.Target, SnapshotOrigin.PreRepair, ct).ConfigureAwait(false);
-                capturaPreFeita = true;
+                await CaptureAsync(lastGood.Target, SnapshotOrigin.PreRepair, ct).ConfigureAwait(false);
+                preCaptureDone = true;
             }
 
-            var contexto = lastGood ?? SemContexto();
-            var resultado = await _executor.ExecuteAsync(passo, contexto, ct).ConfigureAwait(false);
-            aplicouAlgo |= resultado.Status == RepairStatus.Applied;
-            resultados.Add(resultado);
+            var context = lastGood ?? EmptyContext();
+            var outcome = await _executor.ExecuteAsync(step, context, ct).ConfigureAwait(false);
+            appliedAny |= outcome.Status == RepairStatus.Applied;
+            results.Add(outcome);
         }
 
-        // 5. Pós-reparo: registra o novo estado se algo foi aplicado.
-        if (aplicouAlgo && lastGood is not null)
+        // 5. Post-repair: record the new state if anything was applied.
+        if (appliedAny && lastGood is not null)
         {
-            await CapturarAsync(lastGood.Target, SnapshotOrigin.PostRepair, ct).ConfigureAwait(false);
+            await CaptureAsync(lastGood.Target, SnapshotOrigin.PostRepair, ct).ConfigureAwait(false);
         }
 
-        return resultados;
+        return results;
     }
 
-    private async Task CapturarAsync(PrinterTarget alvo, SnapshotOrigin origem, CancellationToken ct)
+    private async Task CaptureAsync(PrinterTarget target, SnapshotOrigin origin, CancellationToken ct)
     {
         if (_store is null || _capture is null)
         {
             return;
         }
 
-        var snapshot = await _capture.CaptureAsync(alvo, origem, ct).ConfigureAwait(false);
+        var snapshot = await _capture.CaptureAsync(target, origin, ct).ConfigureAwait(false);
         await _store.SaveAsync(snapshot, ct).ConfigureAwait(false);
     }
 
-    private static RepairOutcome SemExecucao(RepairPlan plan, RepairStep passo, RepairStatus status, string motivo) =>
-        new(plan.TargetId, Guid.Empty, passo.Kind, status, motivo);
+    private static RepairOutcome WithoutExecution(RepairPlan plan, RepairStep step, RepairStatus status, string reason) =>
+        new(plan.TargetId, Guid.Empty, step.Kind, status, reason);
 
-    private static PrinterSnapshot SemContexto()
+    private static PrinterSnapshot EmptyContext()
     {
-        var alvoVazio = new PrinterTarget("-", null, null, PrinterProtocol.TcpRaw, null, null, null);
+        var emptyTarget = new PrinterTarget("-", null, null, PrinterProtocol.TcpRaw, null, null, null);
         return new PrinterSnapshot(
-            Guid.Empty, DateTime.UnixEpoch, SnapshotOrigin.Manual, alvoVazio,
+            Guid.Empty, DateTime.UnixEpoch, SnapshotOrigin.Manual, emptyTarget,
             null, null, null,
             new Dictionary<string, string>(), new Dictionary<string, string>(),
-            Snapshots.SnapshotStore.SchemaVersionAtual);
+            Snapshots.SnapshotStore.CurrentSchemaVersion);
     }
 }

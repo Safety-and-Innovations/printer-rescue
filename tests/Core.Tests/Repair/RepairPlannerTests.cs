@@ -4,92 +4,92 @@ using Xunit;
 
 namespace PrinterRescue.Core.Tests.Repair;
 
-/// <summary>Testes do gerador de planos de reparo: ordem contratual, snapshot e conservadorismo.</summary>
+/// <summary>Repair plan generator tests: contractual order, snapshot, and conservatism.</summary>
 public sealed class RepairPlannerTests
 {
     private readonly RepairPlanner _planner = new();
 
     [Fact]
-    public void FilaComWarnGeraClearQueueAntesDeRestartSpooler()
+    public void QueueWarnGeneratesClearQueueBeforeRestartSpooler()
     {
-        var report = CriarReport(fila: CheckResult.Warn);
+        var report = CreateReport(queue: CheckResult.Warn);
 
-        var plano = _planner.PlanRepairs(report, lastGood: null);
+        var plan = _planner.PlanRepairs(report, lastGood: null);
 
-        Assert.Contains(plano.Steps, static s => s.Kind == RepairActionKind.ClearQueue);
-        Assert.Contains(plano.Steps, static s => s.Kind == RepairActionKind.RestartSpooler);
-        Assert.True(Indice(plano, RepairActionKind.ClearQueue) < Indice(plano, RepairActionKind.RestartSpooler));
+        Assert.Contains(plan.Steps, static s => s.Kind == RepairActionKind.ClearQueue);
+        Assert.Contains(plan.Steps, static s => s.Kind == RepairActionKind.RestartSpooler);
+        Assert.True(Index(plan, RepairActionKind.ClearQueue) < Index(plan, RepairActionKind.RestartSpooler));
     }
 
     [Fact]
-    public void PortaEmFailComSnapshotGeraRestorePortConsistente()
+    public void PortFailWithSnapshotGeneratesConsistentRestorePort()
     {
-        var portaBoa = new PortConfig("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw);
-        var snapshot = CriarSnapshot(porta: portaBoa);
-        var report = CriarReport(porta: CheckResult.Fail);
+        var goodPort = new PortConfig("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw);
+        var snapshot = CreateSnapshot(port: goodPort);
+        var report = CreateReport(port: CheckResult.Fail);
 
-        var plano = _planner.PlanRepairs(report, snapshot);
+        var plan = _planner.PlanRepairs(report, snapshot);
 
-        var passoPorta = Assert.Single(plano.Steps, static s => s.Kind == RepairActionKind.RestorePort);
-        Assert.False(passoPorta.Destructive);
-        Assert.True(passoPorta.RequiresElevation);
-        // Consistência com o snapshot: nome e endereço da porta boa aparecem na descrição.
-        Assert.Contains(portaBoa.PortName, passoPorta.Description, StringComparison.Ordinal);
-        Assert.Contains(portaBoa.HostAddress, passoPorta.Description, StringComparison.Ordinal);
+        var portStep = Assert.Single(plan.Steps, static s => s.Kind == RepairActionKind.RestorePort);
+        Assert.False(portStep.Destructive);
+        Assert.True(portStep.RequiresElevation);
+        // Consistency with the snapshot: the good port name and address appear in the description.
+        Assert.Contains(goodPort.PortName, portStep.Description, StringComparison.Ordinal);
+        Assert.Contains(goodPort.HostAddress, portStep.Description, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DriverEmFailSemIppClassDriverPlanejaReinstallComIppAntesDeDriverStore()
+    public void DriverFailWithoutIppClassDriverPlansReinstallWithIppBeforeDriverStore()
     {
-        var driverRuim = new DriverInfo("HP Universal PCL6", "3.12.0.0", InfName: null, PresentInDriverStore: true, IsIppClassDriver: false);
-        var snapshot = CriarSnapshot(driver: driverRuim);
-        var report = CriarReport(driver: CheckResult.Fail);
+        var badDriver = new DriverInfo("HP Universal PCL6", "3.12.0.0", InfName: null, PresentInDriverStore: true, IsIppClassDriver: false);
+        var snapshot = CreateSnapshot(driver: badDriver);
+        var report = CreateReport(driver: CheckResult.Fail);
 
-        var plano = _planner.PlanRepairs(report, snapshot);
+        var plan = _planner.PlanRepairs(report, snapshot);
 
-        Assert.Contains(plano.Steps, static s => s.Kind == RepairActionKind.ReinstallWithIppClassDriver);
-        Assert.Contains(plano.Steps, static s => s.Kind == RepairActionKind.ReinstallFromDriverStore);
+        Assert.Contains(plan.Steps, static s => s.Kind == RepairActionKind.ReinstallWithIppClassDriver);
+        Assert.Contains(plan.Steps, static s => s.Kind == RepairActionKind.ReinstallFromDriverStore);
         Assert.True(
-            Indice(plano, RepairActionKind.ReinstallWithIppClassDriver) < Indice(plano, RepairActionKind.ReinstallFromDriverStore));
+            Index(plan, RepairActionKind.ReinstallWithIppClassDriver) < Index(plan, RepairActionKind.ReinstallFromDriverStore));
     }
 
     [Fact]
-    public void SemSnapshotNenhumPassoDestrutivoEntraNoPlano()
+    public void WithoutSnapshotNoDestructiveStepEntersPlan()
     {
-        var report = CriarReport(porta: CheckResult.Fail, driver: CheckResult.Fail);
+        var report = CreateReport(port: CheckResult.Fail, driver: CheckResult.Fail);
 
-        var plano = _planner.PlanRepairs(report, lastGood: null);
+        var plan = _planner.PlanRepairs(report, lastGood: null);
 
-        Assert.DoesNotContain(plano.Steps, static s => s.Destructive);
-        Assert.DoesNotContain(plano.Steps, static s => s.Kind == RepairActionKind.RemoveBrokenInstall);
-        Assert.DoesNotContain(plano.Steps, static s => s.Kind == RepairActionKind.ReinstallWithIppClassDriver);
-        Assert.DoesNotContain(plano.Steps, static s => s.Kind == RepairActionKind.ReinstallFromDriverStore);
-        // Passos destrutivos potenciais ficam registrados como SkippedNoSnapshot.
-        Assert.Contains("SkippedNoSnapshot", plano.Steps[^1].Description, StringComparison.Ordinal);
+        Assert.DoesNotContain(plan.Steps, static s => s.Destructive);
+        Assert.DoesNotContain(plan.Steps, static s => s.Kind == RepairActionKind.RemoveBrokenInstall);
+        Assert.DoesNotContain(plan.Steps, static s => s.Kind == RepairActionKind.ReinstallWithIppClassDriver);
+        Assert.DoesNotContain(plan.Steps, static s => s.Kind == RepairActionKind.ReinstallFromDriverStore);
+        // Potential destructive steps are recorded as SkippedNoSnapshot.
+        Assert.Contains("SkippedNoSnapshot", plan.Steps[^1].Description, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void TudoPassProduzPlanoVazio()
+    public void AllPassProducesEmptyPlan()
     {
-        var report = CriarReport();
+        var report = CreateReport();
 
-        var plano = _planner.PlanRepairs(report, lastGood: null);
+        var plan = _planner.PlanRepairs(report, lastGood: null);
 
-        Assert.Empty(plano.Steps);
-        Assert.False(plano.RequiresElevation);
+        Assert.Empty(plan.Steps);
+        Assert.False(plan.RequiresElevation);
     }
 
     [Fact]
-    public void OrdemGlobalEContratual()
+    public void GlobalOrderIsContractual()
     {
-        var report = CriarReport(fila: CheckResult.Warn, porta: CheckResult.Fail, driver: CheckResult.Fail);
-        var snapshot = CriarSnapshot(porta: new PortConfig("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw));
+        var report = CreateReport(queue: CheckResult.Warn, port: CheckResult.Fail, driver: CheckResult.Fail);
+        var snapshot = CreateSnapshot(port: new PortConfig("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw));
 
-        var plano = _planner.PlanRepairs(report, snapshot);
+        var plan = _planner.PlanRepairs(report, snapshot);
 
-        var kinds = plano.Steps.Select(static s => s.Kind).ToList();
-        Assert.True(kinds.Count >= 5, $"Plano deveria ter ao menos 5 passos, veio {kinds.Count}.");
-        foreach (var (anterior, seguinte) in new[]
+        var kinds = plan.Steps.Select(static s => s.Kind).ToList();
+        Assert.True(kinds.Count >= 5, $"Plan should have at least 5 steps, got {kinds.Count}.");
+        foreach (var (previous, next) in new[]
                  {
                      (RepairActionKind.ClearQueue, RepairActionKind.RestartSpooler),
                      (RepairActionKind.RestartSpooler, RepairActionKind.RestorePort),
@@ -98,94 +98,94 @@ public sealed class RepairPlannerTests
                      (RepairActionKind.ReinstallFromDriverStore, RepairActionKind.RemoveBrokenInstall),
                  })
         {
-            Assert.True(kinds.IndexOf(anterior) < kinds.IndexOf(seguinte), $"{anterior} deve vir antes de {seguinte}.");
+            Assert.True(kinds.IndexOf(previous) < kinds.IndexOf(next), $"{previous} must come before {next}.");
         }
     }
 
     [Fact]
-    public void DestructiveSomenteNosPassosDeReinstallERemocao()
+    public void DestructiveOnlyOnReinstallAndRemovalSteps()
     {
-        var report = CriarReport(fila: CheckResult.Warn, driver: CheckResult.Fail);
-        var snapshot = CriarSnapshot();
+        var report = CreateReport(queue: CheckResult.Warn, driver: CheckResult.Fail);
+        var snapshot = CreateSnapshot();
 
-        var plano = _planner.PlanRepairs(report, snapshot);
+        var plan = _planner.PlanRepairs(report, snapshot);
 
-        foreach (var passo in plano.Steps)
+        foreach (var step in plan.Steps)
         {
-            if (passo.Kind is RepairActionKind.RemoveBrokenInstall
+            if (step.Kind is RepairActionKind.RemoveBrokenInstall
                 or RepairActionKind.ReinstallWithIppClassDriver
                 or RepairActionKind.ReinstallFromDriverStore)
             {
-                Assert.True(passo.Destructive, $"{passo.Kind} deve ser destrutivo.");
+                Assert.True(step.Destructive, $"{step.Kind} must be destructive.");
             }
             else
             {
-                Assert.False(passo.Destructive, $"{passo.Kind} não deve ser destrutivo.");
+                Assert.False(step.Destructive, $"{step.Kind} must not be destructive.");
             }
         }
     }
 
     [Fact]
-    public void ElevacaoObrigatoriaNosPassosContratuais()
+    public void ElevationRequiredOnContractualSteps()
     {
-        var report = CriarReport(fila: CheckResult.Warn, porta: CheckResult.Fail, driver: CheckResult.Fail);
-        var snapshot = CriarSnapshot(porta: new PortConfig("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw));
+        var report = CreateReport(queue: CheckResult.Warn, port: CheckResult.Fail, driver: CheckResult.Fail);
+        var snapshot = CreateSnapshot(port: new PortConfig("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw));
 
-        var plano = _planner.PlanRepairs(report, snapshot);
+        var plan = _planner.PlanRepairs(report, snapshot);
 
-        foreach (var passo in plano.Steps)
+        foreach (var step in plan.Steps)
         {
-            if (passo.Kind is RepairActionKind.RestartSpooler
+            if (step.Kind is RepairActionKind.RestartSpooler
                 or RepairActionKind.RestorePort
                 or RepairActionKind.RemoveBrokenInstall
                 or RepairActionKind.ReinstallWithIppClassDriver
                 or RepairActionKind.ReinstallFromDriverStore)
             {
-                Assert.True(passo.RequiresElevation, $"{passo.Kind} exige elevação.");
+                Assert.True(step.RequiresElevation, $"{step.Kind} requires elevation.");
             }
         }
 
-        Assert.True(plano.RequiresElevation);
+        Assert.True(plan.RequiresElevation);
     }
 
-    private static int Indice(RepairPlan plano, RepairActionKind kind)
+    private static int Index(RepairPlan plan, RepairActionKind kind)
     {
-        var indice = plano.Steps.ToList().FindIndex(s => s.Kind == kind);
-        Assert.True(indice >= 0, $"Plano não contém {kind}.");
-        return indice;
+        var index = plan.Steps.ToList().FindIndex(s => s.Kind == kind);
+        Assert.True(index >= 0, $"Plan does not contain {kind}.");
+        return index;
     }
 
-    private static DiagnosticReport CriarReport(
-        CheckResult fila = CheckResult.Pass,
-        CheckResult porta = CheckResult.Pass,
+    private static DiagnosticReport CreateReport(
+        CheckResult queue = CheckResult.Pass,
+        CheckResult port = CheckResult.Pass,
         CheckResult driver = CheckResult.Pass)
     {
-        var agora = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
         var checks = new List<CheckOutcome>
         {
-            new(CheckId.SpoolerRunning, CheckResult.Pass, Severity.Info, "Spooler acessível."),
-            new(CheckId.PortOpen, porta, porta == CheckResult.Pass ? Severity.Info : Severity.Error, $"Porta: {porta}."),
+            new(CheckId.SpoolerRunning, CheckResult.Pass, Severity.Info, "Spooler reachable."),
+            new(CheckId.PortOpen, port, port == CheckResult.Pass ? Severity.Info : Severity.Error, $"Port: {port}."),
             new(CheckId.DriverPresent, driver, driver == CheckResult.Pass ? Severity.Info : Severity.Error, $"Driver: {driver}."),
-            new(CheckId.QueueExists, CheckResult.Pass, Severity.Info, "Fila existe."),
-            new(CheckId.QueueNotStuck, fila, fila == CheckResult.Pass ? Severity.Info : fila == CheckResult.Warn ? Severity.Warning : Severity.Error, $"Fila: {fila}."),
-            new(CheckId.NoDuplicateInstall, CheckResult.Pass, Severity.Info, "Sem duplicidade."),
+            new(CheckId.QueueExists, CheckResult.Pass, Severity.Info, "Queue exists."),
+            new(CheckId.QueueNotStuck, queue, queue == CheckResult.Pass ? Severity.Info : queue == CheckResult.Warn ? Severity.Warning : Severity.Error, $"Queue: {queue}."),
+            new(CheckId.NoDuplicateInstall, CheckResult.Pass, Severity.Info, "No duplicates."),
         };
 
-        return new DiagnosticReport(Guid.NewGuid(), agora, agora.AddSeconds(2), checks, new RepairPlan(Guid.NewGuid(), [], false));
+        return new DiagnosticReport(Guid.NewGuid(), now, now.AddSeconds(2), checks, new RepairPlan(Guid.NewGuid(), [], false));
     }
 
-    private static PrinterSnapshot CriarSnapshot(
-        PortConfig? porta = null,
+    private static PrinterSnapshot CreateSnapshot(
+        PortConfig? port = null,
         DriverInfo? driver = null)
     {
-        var alvo = TestTargets.Tcp();
+        var target = TestTargets.Tcp();
         return new PrinterSnapshot(
             Id: Guid.NewGuid(),
             CreatedAtUtc: DateTime.UtcNow,
             Origin: SnapshotOrigin.PreRepair,
-            Target: alvo,
-            Port: porta,
-            Queue: new QueueState(alvo.Name, Exists: true, StuckJobs: 0, DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true),
+            Target: target,
+            Port: port,
+            Queue: new QueueState(target.Name, Exists: true, StuckJobs: 0, DefaultPaperSize: "A4", CopiesDefault: 1, ColorDefault: false, DuplexDefault: true),
             Driver: driver,
             Permissions: new Dictionary<string, string>(),
             Defaults: new Dictionary<string, string>(),

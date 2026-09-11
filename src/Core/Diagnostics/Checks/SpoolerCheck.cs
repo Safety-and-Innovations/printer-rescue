@@ -3,9 +3,9 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Diagnostics.Checks;
 
 /// <summary>
-/// Verifica se o serviço de spooler está acessível.
-/// Pass quando o gateway responde; Fail em qualquer falha de acesso
-/// (os demais checks ficam NotApplicable — gating feito pelo engine).
+/// Checks whether the spooler service is reachable.
+/// Pass when the gateway responds; Fail on any access failure
+/// (remaining checks become NotApplicable — gating done by the engine).
 /// </summary>
 public sealed class SpoolerCheck : IDiagnosticCheck
 {
@@ -21,7 +21,7 @@ public sealed class SpoolerCheck : IDiagnosticCheck
         try
         {
             _ = await gateway.ListPrintersAsync(ct).ConfigureAwait(false);
-            return new CheckOutcome(Id, CheckResult.Pass, Severity.Info, "Spooler acessível.");
+            return new CheckOutcome(Id, CheckResult.Pass, Severity.Info, "Spooler reachable.");
         }
         catch (OperationCanceledException)
         {
@@ -29,8 +29,8 @@ public sealed class SpoolerCheck : IDiagnosticCheck
         }
         catch (Exception ex)
         {
-            // Check de diagnóstico nunca propaga falha do ambiente: converte em Fail.
-            return new CheckOutcome(Id, CheckResult.Fail, Severity.Error, $"Spooler inacessível: {ex.Message}");
+            // A diagnostic check never propagates environment failures: converts them to Fail.
+            return new CheckOutcome(Id, CheckResult.Fail, Severity.Error, $"Spooler unreachable: {ex.Message}");
         }
     }
 }

@@ -5,9 +5,9 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Adapters.Windows.Winspool;
 
 /// <summary>
-/// Gateway real do subsistema de impressão via winspool.drv.
-/// Todas as entradas públicas são protegidas por guarda de plataforma
-/// (CA1416: TreatWarningsAsErrors força o padrão em todo método).
+/// Real gateway to the print subsystem via winspool.drv.
+/// Every public entry is guarded by the platform check
+/// (CA1416: TreatWarningsAsErrors enforces the pattern on each method).
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WinspoolPrintGateway : IPrintSystemGateway
@@ -16,24 +16,24 @@ public sealed class WinspoolPrintGateway : IPrintSystemGateway
     {
         EnsureWindows();
 
-        var nomes = WinspoolNative.EnumPrinterNames();
-        var alvos = new List<PrinterTarget>(nomes.Count);
-        foreach (var nome in nomes)
+        var names = WinspoolNative.EnumPrinterNames();
+        var targets = new List<PrinterTarget>(names.Count);
+        foreach (var name in names)
         {
             ct.ThrowIfCancellationRequested();
-            var info = WinspoolNative.ObterInfoImpressora(nome);
+            var info = WinspoolNative.GetPrinterInfo(name);
             var portName = info?.PortName;
-            alvos.Add(new PrinterTarget(
-                Name: nome,
+            targets.Add(new PrinterTarget(
+                Name: name,
                 ShareName: info?.ShareName,
                 PortName: portName,
-                Protocol: Mappers.InferirProtocolo(portName),
+                Protocol: Mappers.InferProtocol(portName),
                 DeviceId: null,
                 DriverName: info?.DriverName,
                 DriverVersion: info?.DriverVersion));
         }
 
-        return Task.FromResult<IReadOnlyList<PrinterTarget>>(alvos);
+        return Task.FromResult<IReadOnlyList<PrinterTarget>>(targets);
     }
 
     public Task<PortConfig?> GetPortAsync(string portName, CancellationToken ct = default)
@@ -41,9 +41,9 @@ public sealed class WinspoolPrintGateway : IPrintSystemGateway
         ArgumentException.ThrowIfNullOrWhiteSpace(portName);
         EnsureWindows();
 
-        // A configuração canônica da porta TCP é derivada do nome (convenção do Windows);
-        // portas locais/USB não têm configuração de rede para restaurar.
-        return Task.FromResult(Mappers.DerivarPortConfig(portName));
+        // The canonical TCP port configuration is derived from the name (Windows convention);
+        // local/USB ports have no network configuration to restore.
+        return Task.FromResult(Mappers.DerivePortConfig(portName));
     }
 
     public Task<QueueState> GetQueueStateAsync(string queueName, CancellationToken ct = default)
@@ -51,18 +51,18 @@ public sealed class WinspoolPrintGateway : IPrintSystemGateway
         ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
         EnsureWindows();
 
-        var existe = WinspoolNative.ImpressoraExiste(queueName);
-        if (!existe)
+        var exists = WinspoolNative.PrinterExists(queueName);
+        if (!exists)
         {
             return Task.FromResult(new QueueState(queueName, Exists: false, StuckJobs: 0,
                 DefaultPaperSize: null, CopiesDefault: 1, ColorDefault: false, DuplexDefault: false));
         }
 
-        var jobs = WinspoolNative.ObterJobs(queueName);
-        var agora = DateTime.UtcNow;
-        var presos = jobs.Count(j => Mappers.JobPreso(j.Status, j.SubmittedUtc, agora));
+        var jobs = WinspoolNative.GetJobs(queueName);
+        var now = DateTime.UtcNow;
+        var stuck = jobs.Count(j => Mappers.IsJobStuck(j.Status, j.SubmittedUtc, now));
 
-        return Task.FromResult(new QueueState(queueName, Exists: true, StuckJobs: presos,
+        return Task.FromResult(new QueueState(queueName, Exists: true, StuckJobs: stuck,
             DefaultPaperSize: null, CopiesDefault: 1, ColorDefault: false, DuplexDefault: false));
     }
 
@@ -72,21 +72,21 @@ public sealed class WinspoolPrintGateway : IPrintSystemGateway
         EnsureWindows();
 
         var drivers = WinspoolNative.EnumDrivers();
-        var encontrado = drivers.FirstOrDefault(d =>
-            string.Equals(d.Nome, driverName, StringComparison.OrdinalIgnoreCase));
+        var found = drivers.FirstOrDefault(d =>
+            string.Equals(d.Name, driverName, StringComparison.OrdinalIgnoreCase));
 
-        if (encontrado is { } d)
+        if (found is { } d)
         {
             return Task.FromResult<DriverInfo?>(new DriverInfo(
-                d.Nome, d.Versao ?? "desconhecida", d.InfName, PresentInDriverStore: true,
-                Mappers.EhIppClassDriver(d.Nome)));
+                d.Name, d.Version ?? "unknown", d.InfName, PresentInDriverStore: true,
+                Mappers.IsIppClassDriver(d.Name)));
         }
 
-        // Driver nomeado na impressora mas ausente do repositório local:
-        // presente no sistema apenas se a impressora que o usa está instalada.
+        // Driver named on the printer but missing from the local repository:
+        // present on the system only if the printer using it is installed.
         return Task.FromResult<DriverInfo?>(new DriverInfo(
-            driverName, "desconhecida", InfName: null,
-            PresentInDriverStore: false, IsIppClassDriver: Mappers.EhIppClassDriver(driverName)));
+            driverName, "unknown", InfName: null,
+            PresentInDriverStore: false, IsIppClassDriver: Mappers.IsIppClassDriver(driverName)));
     }
 
     public Task<IReadOnlyDictionary<string, string>> GetPermissionsSddlAsync(string queueName, CancellationToken ct = default)
@@ -94,11 +94,11 @@ public sealed class WinspoolPrintGateway : IPrintSystemGateway
         ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
         EnsureWindows();
 
-        var sddl = WinspoolNative.ObterSddl(queueName);
-        IReadOnlyDictionary<string, string> mapa = string.IsNullOrEmpty(sddl)
+        var sddl = WinspoolNative.GetSddl(queueName);
+        IReadOnlyDictionary<string, string> map = string.IsNullOrEmpty(sddl)
             ? new Dictionary<string, string>()
             : new Dictionary<string, string> { ["queueSddl"] = sddl };
-        return Task.FromResult(mapa);
+        return Task.FromResult(map);
     }
 
     public Task<IReadOnlyDictionary<string, string>> GetDefaultsAsync(string queueName, CancellationToken ct = default)
@@ -106,20 +106,20 @@ public sealed class WinspoolPrintGateway : IPrintSystemGateway
         ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
         EnsureWindows();
 
-        var devMode = WinspoolNative.ObterDevMode(queueName);
+        var devMode = WinspoolNative.GetDevMode(queueName);
         IReadOnlyDictionary<string, string> defaults = devMode is { } dm
-            ? Mappers.MapearDefaults(dm.PaperSize, dm.Copies, dm.Color, dm.Duplex)
+            ? Mappers.MapDefaults(dm.PaperSize, dm.Copies, dm.Color, dm.Duplex)
             : new Dictionary<string, string>();
         return Task.FromResult(defaults);
     }
 
-    /// <summary>Guarda de plataforma compartilhada pelos adapters.</summary>
+    /// <summary>Platform guard shared by the adapters.</summary>
     internal static void EnsureWindows()
     {
         if (!OperatingSystem.IsWindows())
         {
             throw new PlatformNotSupportedException(
-                "O acesso ao subsistema de impressão do Windows requer execução no Windows.");
+                "Access to the Windows print subsystem requires running on Windows.");
         }
     }
 }

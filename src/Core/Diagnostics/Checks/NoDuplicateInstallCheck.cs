@@ -3,8 +3,8 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Diagnostics.Checks;
 
 /// <summary>
-/// Verifica se existe exatamente uma instalação da impressora no sistema:
-/// duas ou mais entradas com o mesmo nome indicam instalação duplicada corrompida.
+/// Checks whether exactly one installation of the printer exists on the system:
+/// two or more entries with the same name indicate a corrupted duplicate install.
 /// </summary>
 public sealed class NoDuplicateInstallCheck : IDiagnosticCheck
 {
@@ -17,17 +17,17 @@ public sealed class NoDuplicateInstallCheck : IDiagnosticCheck
         ArgumentNullException.ThrowIfNull(gateway);
         ArgumentNullException.ThrowIfNull(target);
 
-        var impressoras = await gateway.ListPrintersAsync(ct).ConfigureAwait(false);
-        var ocorrencias = impressoras.Count(impressora =>
-            string.Equals(impressora.Name, target.Name, StringComparison.OrdinalIgnoreCase));
-        return ocorrencias switch
+        var printers = await gateway.ListPrintersAsync(ct).ConfigureAwait(false);
+        var occurrences = printers.Count(printer =>
+            string.Equals(printer.Name, target.Name, StringComparison.OrdinalIgnoreCase));
+        return occurrences switch
         {
             0 => new CheckOutcome(Id, CheckResult.Fail, Severity.Error,
-                $"Impressora '{target.Name}' não encontrada na lista de impressoras do sistema."),
+                $"Printer '{target.Name}' was not found in the system printer list."),
             1 => new CheckOutcome(Id, CheckResult.Pass, Severity.Info,
-                $"Instalação única da impressora '{target.Name}' confirmada."),
+                $"Single installation of printer '{target.Name}' confirmed."),
             _ => new CheckOutcome(Id, CheckResult.Fail, Severity.Error,
-                $"Encontradas {ocorrencias} instalações duplicadas da impressora '{target.Name}'."),
+                $"Found {occurrences} duplicate installations of printer '{target.Name}'."),
         };
     }
 }

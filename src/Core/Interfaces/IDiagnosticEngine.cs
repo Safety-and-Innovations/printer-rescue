@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core.Interfaces;
 
-/// <summary>Executa a sequência determinística de checks e produz o relatório.</summary>
+/// <summary>Runs the deterministic check sequence and produces the report.</summary>
 public interface IDiagnosticEngine
 {
     Task<global::PrinterRescue.Core.DiagnosticReport> DiagnoseAndPlanAsync(

@@ -9,15 +9,15 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Adapters.Windows.Winspool;
 
 /// <summary>
-/// Executor real das ações de reparo no Windows.
-/// REGRA Nº 1 aplicada em código: nenhuma ação baixa ou instala binário externo —
-/// reinstalação usa exclusivamente o nome do driver gravado no snapshot
-/// (que estava presente na máquina quando funcionava) ou o Microsoft IPP Class Driver.
+/// Real executor of repair actions on Windows.
+/// RULE #1 enforced in code: no action downloads or installs external binaries —
+/// reinstall uses only the driver name recorded in the snapshot
+/// (which was present on the machine when it worked) or the Microsoft IPP Class Driver.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsRepairExecutor : IRepairExecutor
 {
-    private const string NomeIppClassDriver = "Microsoft IPP Class Driver";
+    private const string IppClassDriverName = "Microsoft IPP Class Driver";
 
     public bool IsElevated()
     {
@@ -37,15 +37,15 @@ public sealed class WindowsRepairExecutor : IRepairExecutor
             ct.ThrowIfCancellationRequested();
             return action.Kind switch
             {
-                RepairActionKind.RestartSpooler => ReiniciarSpooler(action, context),
-                RepairActionKind.ClearQueue => LimparFila(action, context),
-                RepairActionKind.RestorePort => RestaurarPorta(action, context),
-                RepairActionKind.ReinstallWithIppClassDriver => Reinstalar(action, context, NomeIppClassDriver),
-                RepairActionKind.ReinstallFromDriverStore => Reinstalar(action, context, context.Driver?.Name ?? NomeIppClassDriver),
-                RepairActionKind.RemoveBrokenInstall => RemoverInstalacao(action, context),
+                RepairActionKind.RestartSpooler => RestartSpooler(action, context),
+                RepairActionKind.ClearQueue => ClearQueue(action, context),
+                RepairActionKind.RestorePort => RestorePort(action, context),
+                RepairActionKind.ReinstallWithIppClassDriver => Reinstall(action, context, IppClassDriverName),
+                RepairActionKind.ReinstallFromDriverStore => Reinstall(action, context, context.Driver?.Name ?? IppClassDriverName),
+                RepairActionKind.RemoveBrokenInstall => RemoveInstallation(action, context),
                 RepairActionKind.RestorePermissions or RepairActionKind.RestoreDefaults =>
-                    Task.FromResult(Falhou(action, context, $"Passo '{action.Kind}' ainda não suportado neste release.")),
-                _ => Task.FromResult(Falhou(action, context, $"Passo '{action.Kind}' desconhecido.")),
+                    Task.FromResult(Failed(action, context, $"Step '{action.Kind}' is not yet supported in this release.")),
+                _ => Task.FromResult(Failed(action, context, $"Unknown step '{action.Kind}'.")),
             };
         }
         catch (OperationCanceledException)
@@ -56,49 +56,49 @@ public sealed class WindowsRepairExecutor : IRepairExecutor
         {
             return Task.FromResult(new RepairOutcome(
                 Guid.NewGuid(), context.Id, action.Kind, RepairStatus.Failed,
-                $"Falha ao executar '{action.Kind}': {ex.Message}"));
+                $"Failed to run '{action.Kind}': {ex.Message}"));
         }
     }
 
-    // ---- Ações --------------------------------------------------------------
+    // ---- Actions --------------------------------------------------------------
 
-    private static Task<RepairOutcome> ReiniciarSpooler(RepairStep action, PrinterSnapshot context)
+    private static Task<RepairOutcome> RestartSpooler(RepairStep action, PrinterSnapshot context)
     {
-        using var servico = new ServiceController("Spooler");
-        if (servico.Status != ServiceControllerStatus.Stopped)
+        using var service = new ServiceController("Spooler");
+        if (service.Status != ServiceControllerStatus.Stopped)
         {
-            servico.Stop();
-            servico.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+            service.Stop();
+            service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
         }
 
-        servico.Start();
-        servico.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
+        service.Start();
+        service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
 
-        return Task.FromResult(Aplicado(action, context, "Serviço Print Spooler reiniciado."));
+        return Task.FromResult(Succeeded(action, context, "Print Spooler service restarted."));
     }
 
-    private static Task<RepairOutcome> LimparFila(RepairStep action, PrinterSnapshot context)
+    private static Task<RepairOutcome> ClearQueue(RepairStep action, PrinterSnapshot context)
     {
-        var nome = context.Target.Name;
-        if (!WinspoolNative.OpenPrinterW(nome, out var handle, IntPtr.Zero))
+        var name = context.Target.Name;
+        if (!WinspoolNative.OpenPrinterW(name, out var handle, IntPtr.Zero))
         {
-            return Task.FromResult(Falhou(action, context, $"Fila '{nome}' não pôde ser aberta."));
+            return Task.FromResult(Failed(action, context, $"Queue '{name}' could not be opened."));
         }
 
         try
         {
-            var jobs = WinspoolNative.ObterJobs(nome);
-            var removidos = 0;
+            var jobs = WinspoolNative.GetJobs(name);
+            var removed = 0;
             foreach (var job in jobs)
             {
                 if (WinspoolNative.SetJobW(handle, job.JobId, 0, null, WinspoolNative.JobControlDelete))
                 {
-                    removidos++;
+                    removed++;
                 }
             }
 
-            return Task.FromResult(Aplicado(action, context,
-                $"Fila limpa: {removidos} de {jobs.Count} trabalhos removidos."));
+            return Task.FromResult(Succeeded(action, context,
+                $"Queue cleared: {removed} of {jobs.Count} jobs removed."));
         }
         finally
         {
@@ -106,43 +106,43 @@ public sealed class WindowsRepairExecutor : IRepairExecutor
         }
     }
 
-    private static Task<RepairOutcome> RestaurarPorta(RepairStep action, PrinterSnapshot context)
+    private static Task<RepairOutcome> RestorePort(RepairStep action, PrinterSnapshot context)
     {
-        if (context.Port is not { } porta)
+        if (context.Port is not { } port)
         {
-            return Task.FromResult(Falhou(action, context, "Snapshot não contém configuração de porta para restaurar."));
+            return Task.FromResult(Failed(action, context, "Snapshot has no port configuration to restore."));
         }
 
-        // A porta TCP/IP padrão do Windows é persistida no registro pelo monitor de porta.
-        var chave = Registry.LocalMachine.OpenSubKey(
+        // The default Windows TCP/IP port is persisted in the registry by the port monitor.
+        var key = Registry.LocalMachine.OpenSubKey(
             @"SYSTEM\CurrentControlSet\Control\Print\Monitors\Standard TCP/IP Port\Ports", writable: true)
-            ?? throw new Win32Exception("Monitor de porta TCP/IP padrão não encontrado.");
+            ?? throw new Win32Exception("Default TCP/IP port monitor not found.");
 
-        using (chave)
+        using (key)
         {
-            var sub = chave.CreateSubKey(porta.PortName);
+            var sub = key.CreateSubKey(port.PortName);
             using (sub)
             {
-                sub.SetValue("HostName", porta.HostAddress);
-                sub.SetValue("IPAddress", porta.HostAddress);
-                sub.SetValue("PortNumber", porta.PortNumber, RegistryValueKind.DWord);
+                sub.SetValue("HostName", port.HostAddress);
+                sub.SetValue("IPAddress", port.HostAddress);
+                sub.SetValue("PortNumber", port.PortNumber, RegistryValueKind.DWord);
                 sub.SetValue("Protocol", 1, RegistryValueKind.DWord); // 1 = RAW
                 sub.SetValue("SNMP Enabled", 0, RegistryValueKind.DWord);
             }
         }
 
-        return Task.FromResult(Aplicado(action, context,
-            $"Porta '{porta.PortName}' restaurada para {porta.HostAddress}:{porta.PortNumber}."));
+        return Task.FromResult(Succeeded(action, context,
+            $"Port '{port.PortName}' restored to {port.HostAddress}:{port.PortNumber}."));
     }
 
-    private static async Task<RepairOutcome> Reinstalar(RepairStep action, PrinterSnapshot context, string driverName)
+    private static async Task<RepairOutcome> Reinstall(RepairStep action, PrinterSnapshot context, string driverName)
     {
-        var nome = context.Target.Name;
-        var portaNome = context.Port?.PortName ?? context.Target.PortName;
+        var name = context.Target.Name;
+        var portName = context.Port?.PortName ?? context.Target.PortName;
         var shareName = context.Target.ShareName;
 
-        // Remove a instalação quebrada preservando o snapshot (já garantido pela workflow).
-        if (WinspoolNative.OpenPrinterW(nome, out var handle,
+        // Remove the broken installation while keeping the snapshot (already guaranteed by the workflow).
+        if (WinspoolNative.OpenPrinterW(name, out var handle,
                 new IntPtr((long)(WinspoolNative.PrinterAccessUse | WinspoolNative.PrinterAccessAdminister))))
         {
             _ = WinspoolNative.DeletePrinter(handle);
@@ -151,8 +151,8 @@ public sealed class WindowsRepairExecutor : IRepairExecutor
 
         var info = new WinspoolNative.PRINTER_INFO_2W
         {
-            pPrinterName = Marshal.StringToHGlobalUni(nome),
-            pPortName = Marshal.StringToHGlobalUni(portaNome ?? "FILE:"),
+            pPrinterName = Marshal.StringToHGlobalUni(name),
+            pPortName = Marshal.StringToHGlobalUni(portName ?? "FILE:"),
             pDriverName = Marshal.StringToHGlobalUni(driverName),
             pShareName = shareName is null ? IntPtr.Zero : Marshal.StringToHGlobalUni(shareName),
             pComment = IntPtr.Zero,
@@ -164,15 +164,15 @@ public sealed class WindowsRepairExecutor : IRepairExecutor
 
         try
         {
-            var criada = WinspoolNative.AddPrinterW(null, 2, ref info);
-            if (criada == IntPtr.Zero)
+            var created = WinspoolNative.AddPrinterW(null, 2, ref info);
+            if (created == IntPtr.Zero)
             {
-                return await Task.FromResult(Falhou(action, context,
-                    $"Reinstalação falhou (driver local '{driverName}' pode não estar mais disponível)."));
+                return await Task.FromResult(Failed(action, context,
+                    $"Reinstall failed (local driver '{driverName}' may no longer be available)."));
             }
 
-            return await Task.FromResult(Aplicado(action, context,
-                $"Impressora reinstalada com o driver local '{driverName}' (sem download externo)."));
+            return await Task.FromResult(Succeeded(action, context,
+                $"Printer reinstalled with local driver '{driverName}' (no external download)."));
         }
         finally
         {
@@ -186,23 +186,23 @@ public sealed class WindowsRepairExecutor : IRepairExecutor
         }
     }
 
-    private static Task<RepairOutcome> RemoverInstalacao(RepairStep action, PrinterSnapshot context)
+    private static Task<RepairOutcome> RemoveInstallation(RepairStep action, PrinterSnapshot context)
     {
-        var nome = context.Target.Name;
-        if (!WinspoolNative.OpenPrinterW(nome, out var handle,
+        var name = context.Target.Name;
+        if (!WinspoolNative.OpenPrinterW(name, out var handle,
                 new IntPtr((long)(WinspoolNative.PrinterAccessUse | WinspoolNative.PrinterAccessAdminister))))
         {
-            return Task.FromResult(Falhou(action, context, $"Impressora '{nome}' não encontrada para remoção."));
+            return Task.FromResult(Failed(action, context, $"Printer '{name}' not found for removal."));
         }
 
         try
         {
             if (!WinspoolNative.DeletePrinter(handle))
             {
-                return Task.FromResult(Falhou(action, context, $"Remoção de '{nome}' falhou (verifique privilégios)."));
+                return Task.FromResult(Failed(action, context, $"Removal of '{name}' failed (check privileges)."));
             }
 
-            return Task.FromResult(Aplicado(action, context, $"Instalação quebrada de '{nome}' removida."));
+            return Task.FromResult(Succeeded(action, context, $"Broken installation of '{name}' removed."));
         }
         finally
         {
@@ -212,9 +212,9 @@ public sealed class WindowsRepairExecutor : IRepairExecutor
 
     // ---- Helpers ------------------------------------------------------------
 
-    private static RepairOutcome Aplicado(RepairStep action, PrinterSnapshot context, string detalhe) =>
-        new(Guid.NewGuid(), context.Id, action.Kind, RepairStatus.Applied, detalhe);
+    private static RepairOutcome Succeeded(RepairStep action, PrinterSnapshot context, string detail) =>
+        new(Guid.NewGuid(), context.Id, action.Kind, RepairStatus.Applied, detail);
 
-    private static RepairOutcome Falhou(RepairStep action, PrinterSnapshot context, string detalhe) =>
-        new(Guid.NewGuid(), context.Id, action.Kind, RepairStatus.Failed, detalhe);
+    private static RepairOutcome Failed(RepairStep action, PrinterSnapshot context, string detail) =>
+        new(Guid.NewGuid(), context.Id, action.Kind, RepairStatus.Failed, detail);
 }

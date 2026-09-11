@@ -1,36 +1,34 @@
-# Política de Segurança — Printer Rescue
+# Security Policy — Printer Rescue
 
-## Versões suportadas
+## Supported versions
 
-| Versão | Suportada |
+| Version | Supported |
 |---|---|
 | 1.0.x | ✅ |
 
-## Reportando vulnerabilidade
+## Reporting a vulnerability
 
-**NÃO abra issue pública.** Envie relatório para o contato de segurança do
-repositório (GitHub Security Advisories → "Report a vulnerability") ou pelo
-canal publicado em junkyardgoodies.app.
+**Do NOT open a public issue.** Report via the repository's security contact
+(GitHub Security Advisories → "Report a vulnerability").
 
-Inclua: versão afetada, passos de reprodução, impacto estimado, prova de
-conceito se houver. Resposta em até 72 h; correção alvo em 30 dias para
-vulnerabilidades de alta severidade.
+Include: affected version, reproduction steps, estimated impact, proof of
+concept if any. Response within 72 h; target fix within 30 days for
+high-severity vulnerabilities.
 
-## Superfície de ataque e decisões de projeto relevantes
+## Attack surface and relevant design decisions
 
-- **Sem telemetria, sem rede própria**: o app só fala com o subsistema de
-  impressão local e com a impressora alvo (TCP 9100/515/631 quando aplicável).
-- **Snapshots locais**: ficam em `%ProgramData%\PrinterRescue\snapshots\`,
-  leitura/escrita restrita ao perfil administrativo da máquina.
-- **Parser endurecido**: JSON com profundidade máxima 16, tamanho máximo 1 MiB,
-  caminhos validados contra traversal — snapshot é dado não confiável ao ser
-  recarregado.
-- **REGRA Nº 1 como defesa estrutural**: por nunca baixar nem distribuir
-  drivers, o app não é veículo de supply chain de binário de terceiros.
-- **Elevação mínima**: operações destrutivas exigem admin explícito; a GUI roda
-  `asInvoker` e eleva apenas no reparo.
+- **No telemetry, no own network**: the app only talks to the local print
+  subsystem and to the target printer (TCP 9100/515/631 where applicable).
+- **Local snapshots**: stored in `%ProgramData%\PrinterRescue\snapshots\`,
+  read/write restricted to the machine's administrative profile.
+- **Hardened parser**: JSON with max depth 16, max size 1 MiB,
+  traversal-validated paths — a snapshot is untrusted input when reloaded.
+- **RULE #1 as structural defense**: by never downloading or distributing
+  drivers, the app cannot be a third-party binary supply-chain vehicle.
+- **Least elevation**: destructive operations require explicit admin; the GUI runs
+  `asInvoker` and elevates only for repair.
 
-## Escopo fora de garantia
+## Out-of-scope
 
-Impressoras que nunca funcionaram na máquina-alvo estão fora do escopo do
-produto por decisão de projeto (ver README § REGRA Nº 1).
+Printers that never worked on the target machine are out of product scope
+by design decision (see README § RULE #1).

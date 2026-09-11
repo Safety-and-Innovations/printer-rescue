@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core;
 
-/// <summary>Códigos de saída da CLI e do fluxo GUI→motor.</summary>
+/// <summary>Exit codes of the CLI and the GUI-to-engine flow.</summary>
 public enum ExitCode
 {
     Ok = 0,

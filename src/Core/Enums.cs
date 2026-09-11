@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core;
 
-/// <summary>Protocolo de comunicação com a impressora.</summary>
+/// <summary>Printer communication protocol.</summary>
 public enum PrinterProtocol
 {
     TcpRaw,
@@ -10,7 +10,7 @@ public enum PrinterProtocol
     Wsd,
 }
 
-/// <summary>Identificador das verificações do diagnóstico determinístico (ordem de cima para baixo).</summary>
+/// <summary>Identifier of the deterministic diagnostic checks (top-to-bottom order).</summary>
 public enum CheckId
 {
     SpoolerRunning,
@@ -21,7 +21,7 @@ public enum CheckId
     NoDuplicateInstall,
 }
 
-/// <summary>Resultado individual de um check.</summary>
+/// <summary>Individual result of a check.</summary>
 public enum CheckResult
 {
     Pass,
@@ -30,7 +30,7 @@ public enum CheckResult
     NotApplicable,
 }
 
-/// <summary>Severidade de um achado.</summary>
+/// <summary>Severity of a finding.</summary>
 public enum Severity
 {
     Info,
@@ -38,7 +38,7 @@ public enum Severity
     Error,
 }
 
-/// <summary>Ações de reparo suportadas.</summary>
+/// <summary>Supported repair actions.</summary>
 public enum RepairActionKind
 {
     RestartSpooler,
@@ -51,7 +51,7 @@ public enum RepairActionKind
     RestoreDefaults,
 }
 
-/// <summary>Resultado de uma ação de reparo.</summary>
+/// <summary>Outcome of a repair action.</summary>
 public enum RepairStatus
 {
     Applied,
@@ -60,7 +60,7 @@ public enum RepairStatus
     SkippedNoSnapshot,
 }
 
-/// <summary>Origem do snapshot.</summary>
+/// <summary>Snapshot origin.</summary>
 public enum SnapshotOrigin
 {
     Manual,

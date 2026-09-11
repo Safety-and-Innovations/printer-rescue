@@ -9,11 +9,11 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Deterministic>true</Deterministic>
-    <!-- Assinatura / metadados -->
-    <Authors>André Santo (forg3)</Authors>
-    <Company>Junkyard Goodies</Company>
+    <!-- Signature / metadata -->
+    <Authors>forg3</Authors>
+    <Company>forg3</Company>
     <Product>Printer Rescue</Product>
-    <Copyright>Copyright © 2026 André Santo (forg3) | junkyardgoodies.app</Copyright>
-    <NeutralLanguage>pt-BR</NeutralLanguage>
+    <Copyright>Copyright © 2026 forg3</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
 </Project>

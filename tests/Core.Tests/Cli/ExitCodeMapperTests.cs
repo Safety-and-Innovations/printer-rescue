@@ -6,73 +6,73 @@ namespace PrinterRescue.Core.Tests.Cli;
 
 public sealed class ExitCodeMapperTests
 {
-    private static RepairOutcome Resultado(RepairStatus status) =>
+    private static RepairOutcome Outcome(RepairStatus status) =>
         new(Guid.NewGuid(), Guid.NewGuid(), RepairActionKind.ClearQueue, status, "-");
 
-    // ---- Reparo -------------------------------------------------------------
+    // ---- Repair -------------------------------------------------------------
 
     [Fact]
-    public void PlanoVazioRetornaOk()
-        => Assert.Equal(ExitCode.Ok, ExitCodeMapper.DeReparo([]));
+    public void EmptyPlanReturnsOk()
+        => Assert.Equal(ExitCode.Ok, ExitCodeMapper.FromRepair([]));
 
     [Fact]
-    public void AlgumAplicadoTemPrioridade()
-        => Assert.Equal(ExitCode.RepairApplied, ExitCodeMapper.DeReparo(
-            [Resultado(RepairStatus.Applied), Resultado(RepairStatus.Failed)]));
+    public void AnyAppliedHasPriority()
+        => Assert.Equal(ExitCode.RepairApplied, ExitCodeMapper.FromRepair(
+            [Outcome(RepairStatus.Applied), Outcome(RepairStatus.Failed)]));
 
     [Fact]
-    public void SemAplicadosComViolacaoDePolitica()
-        => Assert.Equal(ExitCode.RepairBlockedByPolicy, ExitCodeMapper.DeReparo(
-            [Resultado(RepairStatus.SkippedPolicyViolation)]));
+    public void WithoutAppliedWithPolicyViolation()
+        => Assert.Equal(ExitCode.RepairBlockedByPolicy, ExitCodeMapper.FromRepair(
+            [Outcome(RepairStatus.SkippedPolicyViolation)]));
 
     [Fact]
-    public void SemAplicadosSemPoliticaComSkippedNoSnapshot()
-        => Assert.Equal(ExitCode.SnapshotMissing, ExitCodeMapper.DeReparo(
-            [Resultado(RepairStatus.SkippedNoSnapshot)]));
+    public void WithoutAppliedWithoutPolicyWithSkippedNoSnapshot()
+        => Assert.Equal(ExitCode.SnapshotMissing, ExitCodeMapper.FromRepair(
+            [Outcome(RepairStatus.SkippedNoSnapshot)]));
 
     [Fact]
-    public void SoFalhasRetornaDiagnosticFailed()
-        => Assert.Equal(ExitCode.DiagnosticFailed, ExitCodeMapper.DeReparo(
-            [Resultado(RepairStatus.Failed), Resultado(RepairStatus.Failed)]));
+    public void OnlyFailuresReturnDiagnosticFailed()
+        => Assert.Equal(ExitCode.DiagnosticFailed, ExitCodeMapper.FromRepair(
+            [Outcome(RepairStatus.Failed), Outcome(RepairStatus.Failed)]));
 
-    // ---- Diagnóstico --------------------------------------------------------
+    // ---- Diagnostics --------------------------------------------------------
 
     [Fact]
-    public void DiagnosticoSemFailRetornaOk()
-        => Assert.Equal(ExitCode.Ok, ExitCodeMapper.DeDiagnostico(
+    public void DiagnoseWithoutFailReturnsOk()
+        => Assert.Equal(ExitCode.Ok, ExitCodeMapper.FromDiagnostics(
             [new CheckOutcome(CheckId.PortOpen, CheckResult.Pass, Severity.Info, "-"),
              new CheckOutcome(CheckId.QueueNotStuck, CheckResult.Warn, Severity.Warning, "-")]));
 
     [Fact]
-    public void DiagnosticoComFailRetornaDiagnosticFailed()
-        => Assert.Equal(ExitCode.DiagnosticFailed, ExitCodeMapper.DeDiagnostico(
+    public void DiagnoseWithFailReturnsDiagnosticFailed()
+        => Assert.Equal(ExitCode.DiagnosticFailed, ExitCodeMapper.FromDiagnostics(
             [new CheckOutcome(CheckId.PortOpen, CheckResult.Fail, Severity.Error, "-")]));
 
-    // ---- Formatação ---------------------------------------------------------
+    // ---- Formatting ---------------------------------------------------------
 
     [Fact]
-    public void FormatarCheckIncluiIdResultadoEDetalhe()
+    public void FormatCheckIncludesIdResultAndDetail()
     {
-        var linha = OutputFormatter.Check(
-            new CheckOutcome(CheckId.QueueNotStuck, CheckResult.Warn, Severity.Warning, "3 trabalhos presos"));
+        var line = OutputFormatter.Check(
+            new CheckOutcome(CheckId.QueueNotStuck, CheckResult.Warn, Severity.Warning, "3 stuck jobs"));
 
-        Assert.Contains("QueueNotStuck", linha);
-        Assert.Contains("WARN", linha);
-        Assert.Contains("3 trabalhos presos", linha);
+        Assert.Contains("QueueNotStuck", line);
+        Assert.Contains("WARN", line);
+        Assert.Contains("3 stuck jobs", line);
     }
 
     [Fact]
-    public void FormatarPlanoListaPassosNumerados()
+    public void FormatPlanListsNumberedSteps()
     {
-        var linhas = OutputFormatter.Plano(
+        var lines = OutputFormatter.Plan(
         [
-            new RepairStep(RepairActionKind.ClearQueue, "Limpar fila", Destructive: false, RequiresElevation: false),
-            new RepairStep(RepairActionKind.RemoveBrokenInstall, "Remover quebrada", Destructive: true, RequiresElevation: true),
+            new RepairStep(RepairActionKind.ClearQueue, "Clear queue", Destructive: false, RequiresElevation: false),
+            new RepairStep(RepairActionKind.RemoveBrokenInstall, "Remove broken", Destructive: true, RequiresElevation: true),
         ]);
 
-        Assert.Equal(2, linhas.Count);
-        Assert.StartsWith("1.", linhas[0]);
-        Assert.Contains("[destrutivo]", linhas[1]);
-        Assert.Contains("[elevação]", linhas[1]);
+        Assert.Equal(2, lines.Count);
+        Assert.StartsWith("1.", lines[0]);
+        Assert.Contains("[destructive]", lines[1]);
+        Assert.Contains("[elevation]", lines[1]);
     }
 }

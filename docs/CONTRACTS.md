@@ -1,18 +1,18 @@
-# Printer Rescue — Contratos Compartilhados (CONTRATOS.md)
+# Printer Rescue — Shared Contracts (CONTRACTS.md)
 
-> **Versão 1.0.0 · CONGELADO** para a rodada de implementação paralela.
-> Qualquer mudança aqui exige sincronização com todos os agentes ativos.
-> Autor: André Santo (forg3) | junkyardgoodies.app
+> **Version 1.0.0 · FROZEN** for the parallel implementation round.
+> Any change here requires syncing with all active agents.
+> Author: forg3
 
-Este documento define os tipos, enums e interfaces compartilhados entre os
-módulos do Printer Rescue. Os agentes devem implementar exatamente estes
-nomes, namespaces e assinaturas, sob pena de conflito de merge.
+This document defines the shared types, enums, and interfaces across the
+Printer Rescue modules. Agents must implement exactly these
+names, namespaces, and signatures, or risk merge conflicts.
 
 ---
 
 ## 1. Namespaces
 
-| Projeto | Namespace raiz |
+| Project | Root namespace |
 |---|---|
 | Core | `PrinterRescue.Core` |
 | Adapters.Windows | `PrinterRescue.Adapters.Windows` |
@@ -24,7 +24,7 @@ nomes, namespaces e assinaturas, sob pena de conflito de merge.
 ```csharp
 public enum PrinterProtocol { TcpRaw, Lpr, Ipp, Usb, Wsd }
 
-// Diagnóstico determinístico, de cima para baixo (README da ideia §Fluxo)
+// Deterministic top-down diagnostics (idea README §Flow)
 public enum CheckId
 {
     SpoolerRunning,
@@ -147,7 +147,7 @@ public sealed record RepairOutcome(
 ## 4. Interfaces (namespace `PrinterRescue.Core.Interfaces`)
 
 ```csharp
-/// <summary>Acesso ao estado real do subsistema de impressão.</summary>
+/// <summary>Access to the real print subsystem state.</summary>
 public interface IPrintSystemGateway
 {
     Task<IReadOnlyList<PrinterTarget>> ListPrintersAsync(CancellationToken ct = default);
@@ -158,7 +158,7 @@ public interface IPrintSystemGateway
     Task<IReadOnlyDictionary<string, string>> GetDefaultsAsync(string queueName, CancellationToken ct = default);
 }
 
-/// <summary>Captura e persiste snapshots.</summary>
+/// <summary>Captures and persists snapshots.</summary>
 public interface ISnapshotStore
 {
     Task SaveAsync(PrinterSnapshot snapshot, CancellationToken ct = default);
@@ -168,14 +168,14 @@ public interface ISnapshotStore
     Task DeleteAllAsync(CancellationToken ct = default);
 }
 
-/// <summary>Executa ações no Windows.</summary>
+/// <summary>Executes actions on Windows.</summary>
 public interface IRepairExecutor
 {
     bool IsElevated();
     Task<RepairOutcome> ExecuteAsync(RepairStep step, PrinterSnapshot context, CancellationToken ct = default);
 }
 
-/// <summary>Verificação determinística individual.</summary>
+/// <summary>Single deterministic check.</summary>
 public interface IDiagnosticCheck
 {
     CheckId Id { get; }
@@ -194,33 +194,33 @@ public interface IRepairPlanner
 
 public sealed record PolicyDecision(bool Allowed, string Reason);
 
-/// <summary>Guarda de conformidade: bloqueia distribuição de driver (REGRA Nº 1).</summary>
+/// <summary>Compliance guard: blocks driver distribution (RULE #1).</summary>
 public interface IPolicyGuard
 {
     PolicyDecision Evaluate(RepairStep step, PrinterSnapshot context);
 }
 ```
 
-### Semântica dos checks (contrato comportamental)
+### Check semantics (behavioral contract)
 
-- `SpoolerRunning`: Pass se o serviço de spooler está acessível/rodando; Fail caso contrário; os demais checks ficam `NotApplicable` quando este falha.
-- `PortOpen`: Pass se porta TCP abre em ≤ 2 s; Fail em timeout/recusa; `NotApplicable` para USB/WSD.
-- `DriverPresent`: Pass se o driver está presente no sistema ou DriverStore.
-- `QueueExists`: Pass se a fila existe e está configurada.
-- `QueueNotStuck`: Warn com N jobs presos; Pass com fila livre.
-- `NoDuplicateInstall`: Fail quando há mais de uma instalação da mesma impressora.
+- `SpoolerRunning`: Pass if the spooler service is reachable/running; Fail otherwise; remaining checks become `NotApplicable` when this fails.
+- `PortOpen`: Pass if the TCP port opens within ≤ 2 s; Fail on timeout/refusal; `NotApplicable` for USB/WSD.
+- `DriverPresent`: Pass if the driver is present on the system or DriverStore.
+- `QueueExists`: Pass if the queue exists and is configured.
+- `QueueNotStuck`: Warn with N stuck jobs; Pass with a free queue.
+- `NoDuplicateInstall`: Fail when more than one install of the same printer exists.
 
-### Semântica do `IRepairPlanner`
+### `IRepairPlanner` semantics
 
-- Entrada: relatório com ≥ 1 check Fail + último snapshot válido da impressora.
-- Ordem do plano: limpar fila travada → reiniciar spooler → restaurar porta/fila → reinstalar driver (IPP Class Driver preferido) → remover instalação quebrada.
-- Sem snapshot: plano só com passos não-destrutivos; passos destrutivos resultam em `SkippedNoSnapshot`.
+- Input: report with ≥ 1 failed check + last valid snapshot of the printer.
+- Plan order: clear stuck queue → restart spooler → restore port/queue → reinstall driver (IPP Class Driver preferred) → remove broken install.
+- Without snapshot: plan only with non-destructive steps; destructive steps yield `SkippedNoSnapshot`.
 
-## 5. Formato do snapshot em disco
+## 5. On-disk snapshot format
 
-Caminho: `%ProgramData%\PrinterRescue\snapshots\<id>.json` — um arquivo por snapshot, UTF-8.
+Path: `%ProgramData%\PrinterRescue\snapshots\<id>.json` — one file per snapshot, UTF-8.
 
-Exemplo:
+Example:
 
 ```json
 {
@@ -264,32 +264,32 @@ Exemplo:
 }
 ```
 
-Regras de serialização:
+Serialization rules:
 
-- JSON camelCase, `JsonSerializerOptions` com `WriteIndented = true`.
-- Enum `protocol` serializa como `tcp_raw`, `lpr`, `ipp`, `usb`, `wsd` (JsonStringEnumConverter com naming snake_case).
-- Enum `origin` serializa como `manual`, `pre-repair`, `post-repair`, `scheduled` — usar JsonPropertyName nos membros.
-- Campos obrigatórios mínimos: `schemaVersion`, `id`, `createdAtUtc`, `origin`, `target.name`, `target.protocol`.
-- Desserialização tolerante a campos ausentes opcionais (tudo fora dos obrigatórios é anulável).
-- Limite de tamanho ao ler: rejeitar arquivos > 1 MiB; profundidade máx. 16 (defesa contra JSON malicioso).
+- camelCase JSON, `JsonSerializerOptions` with `WriteIndented = true`.
+- `protocol` enum serializes as `tcp_raw`, `lpr`, `ipp`, `usb`, `wsd` (JsonStringEnumConverter with snake_case naming).
+- `origin` enum serializes as `manual`, `pre-repair`, `post-repair`, `scheduled` — use JsonPropertyName on members.
+- Minimum required fields: `schemaVersion`, `id`, `createdAtUtc`, `origin`, `target.name`, `target.protocol`.
+- Deserialization tolerant of missing optional fields (everything outside required is nullable).
+- Read size limit: reject files > 1 MiB; max depth 16 (defense against malicious JSON).
 
-## 6. Regras transversais (obrigatórias para todos os agentes)
+## 6. Cross-cutting rules (mandatory for all agents)
 
-1. **TDD estrito**: nenhum código sem teste falho primeiro (RED→GREEN→REFACTOR), vertical slices.
-2. **`TreatWarningsAsErrors`**: build com zero warnings.
-3. **Assíncrono com `CancellationToken`** em toda operação de E/S; sem `async void`, sem `.Result`/`.Wait()`, sem `Thread.Sleep` em produção.
-4. **Injeção de dependência via construtor**; interfaces no Core; adapters injetam gateways.
-5. **Nada de código específico de Windows no Core** — Core roda em Linux/macOS/Windows e os testes do Core rodam no Linux deste host.
-6. **REGRA Nº 1 é código**: o `IPolicyGuard` bloqueia qualquer passo que envolva download/hospedagem/distribuição de driver. Teste obrigatório: passo que instale driver externo → `SkippedPolicyViolation`.
-7. **Destrutivo exige snapshot prévio**: sem snapshot, passos destrutivos viram `SkippedNoSnapshot`. Teste obrigatório.
-8. **Segurança**: sem secrets no código; caminhos validados contra path traversal; limites de tamanho/profundidade no parser de snapshot; log sem PII além do tecnicamente necessário (nome de fila/IP são necessários).
-9. **Commits descritivos pequenos** na branch própria, um commit por ciclo RED→GREEN concluído.
-10. **Zero dependência externa no Core** (apenas BCL). Adapters: BCL + P/Invoke declarado localmente. CLI: System.CommandLine. GUI: Avalonia.
-11. **Localização**: strings de usuário em pt-BR; identificadores/códigos em inglês.
+1. **Strict TDD**: no code without a failing test first (RED→GREEN→REFACTOR), vertical slices.
+2. **`TreatWarningsAsErrors`**: build with zero warnings.
+3. **Async with `CancellationToken`** on all I/O; no `async void`, no `.Result`/`.Wait()`, no `Thread.Sleep` in production.
+4. **Constructor dependency injection**; interfaces in Core; adapters inject gateways.
+5. **No Windows-specific code in Core** — Core runs on Linux/macOS/Windows and Core tests run on this host's Linux.
+6. **RULE #1 is code**: `IPolicyGuard` blocks any step involving driver download/hosting/distribution. Mandatory test: external-driver install step → `SkippedPolicyViolation`.
+7. **Destructive requires prior snapshot**: without snapshot, destructive steps become `SkippedNoSnapshot`. Mandatory test.
+8. **Security**: no secrets in code; traversal-validated paths; size/depth limits on snapshot parser; no PII in logs beyond what is technically needed (queue name/IP are needed).
+9. **Small descriptive commits** on your own branch, one commit per finished RED→GREEN cycle.
+10. **Zero external dependencies in Core** (BCL only). Adapters: BCL + locally declared P/Invoke. CLI: System.CommandLine. GUI: Avalonia.
+11. **Localization**: user-facing strings in English; identifiers/code in English.
 
-## 7. Limites de cada agente
+## 7. Agent limits
 
-- Editar somente `src/<seu-projeto>/` e `tests/<SeuProjeto>.Tests/`.
-- Não editar `Directory.Build.props`, `Directory.Build.targets`, solução, CI, README, LICENSE, docs/.
-- Não criar projetos novos nem alterar versões de pacotes.
-- Não implementar catálogo/base de drivers por modelo — REGRA Nº 1.
+- Edit only `src/<your-project>/` and `tests/<YourProject>.Tests/`.
+- Do not edit `Directory.Build.props`, `Directory.Build.targets`, solution, CI, README, LICENSE, docs/.
+- Do not create new projects or change package versions.
+- Do not implement a per-model driver catalog/database — RULE #1.

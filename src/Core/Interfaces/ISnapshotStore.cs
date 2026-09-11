@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core.Interfaces;
 
-/// <summary>Persistência e recuperação de snapshots.</summary>
+/// <summary>Snapshot persistence and recovery.</summary>
 public interface ISnapshotStore
 {
     Task SaveAsync(global::PrinterRescue.Core.PrinterSnapshot snapshot, CancellationToken ct = default);

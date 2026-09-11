@@ -3,8 +3,8 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Diagnostics.Checks;
 
 /// <summary>
-/// Verifica se há trabalhos presos na fila do alvo: Pass com fila livre,
-/// Warn quando existe qualquer trabalho travado na fila.
+/// Checks whether the target queue has stuck jobs: Pass when the queue is clear,
+/// Warn when any stuck job is present.
 /// </summary>
 public sealed class QueueNotStuckCheck : IDiagnosticCheck
 {
@@ -17,11 +17,11 @@ public sealed class QueueNotStuckCheck : IDiagnosticCheck
         ArgumentNullException.ThrowIfNull(gateway);
         ArgumentNullException.ThrowIfNull(target);
 
-        var fila = await gateway.GetQueueStateAsync(target.Name, ct).ConfigureAwait(false);
-        return fila.StuckJobs == 0
+        var queue = await gateway.GetQueueStateAsync(target.Name, ct).ConfigureAwait(false);
+        return queue.StuckJobs == 0
             ? new CheckOutcome(Id, CheckResult.Pass, Severity.Info,
-                $"Fila '{target.Name}' sem trabalhos presos.")
+                $"Queue '{target.Name}' has no stuck jobs.")
             : new CheckOutcome(Id, CheckResult.Warn, Severity.Warning,
-                $"{fila.StuckJobs} {(fila.StuckJobs == 1 ? "trabalho preso" : "trabalhos presos")} na fila '{target.Name}'.");
+                $"{queue.StuckJobs} {(queue.StuckJobs == 1 ? "stuck job" : "stuck jobs")} in queue '{target.Name}'.");
     }
 }

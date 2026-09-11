@@ -6,7 +6,7 @@ namespace PrinterRescue.Core.Tests.Diagnostics;
 public sealed class NoDuplicateInstallCheckTests
 {
     [Fact]
-    public async Task RunAsyncComInstalacaoUnicaRetornaPass()
+    public async Task RunAsyncWithSingleInstallReturnsPass()
     {
         var gateway = new FakePrintGateway(printers: [TestTargets.Tcp()]);
         var check = new NoDuplicateInstallCheck();
@@ -19,7 +19,7 @@ public sealed class NoDuplicateInstallCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComDuasImpressorasDeMesmoNomeRetornaFail()
+    public async Task RunAsyncWithTwoSameNamePrintersReturnsFail()
     {
         var gateway = new FakePrintGateway(printers:
         [
@@ -36,7 +36,7 @@ public sealed class NoDuplicateInstallCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComImpressoraAusenteDaListaRetornaFail()
+    public async Task RunAsyncWithPrinterMissingFromListReturnsFail()
     {
         var gateway = new FakePrintGateway(printers: []);
         var check = new NoDuplicateInstallCheck();
@@ -49,7 +49,7 @@ public sealed class NoDuplicateInstallCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComGatewayNuloLancaArgumentNull()
+    public async Task RunAsyncWithNullGatewayThrowsArgumentNull()
     {
         var check = new NoDuplicateInstallCheck();
 

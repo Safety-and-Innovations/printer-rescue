@@ -5,18 +5,22 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Policy;
 
 /// <summary>
-/// Guarda de conformidade do Printer Rescue — REGRA Nº 1:
-/// nenhum passo pode baixar, hospedar, indexar ou distribuir driver de impressora.
-/// O vetor de violação é a Description do passo: qualquer menção a obtenção ou
-/// distribuição de driver nega o passo, independentemente do Kind. A comparação é
-/// case-insensitive e ignora acentos ("catálogo" e "catalogo" são o mesmo termo).
+/// Printer Rescue compliance guard — RULE #1:
+/// no step may download, host, index, or distribute printer drivers.
+/// The violation vector is the step Description: any mention of driver
+/// acquisition or distribution denies the step, regardless of Kind. Comparison is
+/// case-insensitive and accent-insensitive ("catalogo" and "catálogo" match).
 /// </summary>
 public sealed class PolicyGuard : IPolicyGuard
 {
-    /// <summary>Termos que indicam obtenção ou distribuição de driver — sempre proibidos.</summary>
-    private static readonly string[] TermosProibidos =
+    /// <summary>Terms indicating driver acquisition or distribution — always forbidden.</summary>
+    private static readonly string[] ForbiddenTerms =
     [
         "download",
+        "host",
+        "distribute",
+        "driver catalog",
+        "install external driver",
         "baixar",
         "hospedar",
         "distribuir",
@@ -30,29 +34,29 @@ public sealed class PolicyGuard : IPolicyGuard
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(context);
 
-        var descricaoSemAcento = RemoverAcentos(action.Description);
+        var normalizedDescription = RemoveDiacritics(action.Description);
 
-        foreach (var termo in TermosProibidos)
+        foreach (var term in ForbiddenTerms)
         {
-            if (descricaoSemAcento.Contains(RemoverAcentos(termo), StringComparison.OrdinalIgnoreCase))
+            if (normalizedDescription.Contains(RemoveDiacritics(term), StringComparison.OrdinalIgnoreCase))
             {
                 return new PolicyDecision(
                     Allowed: false,
-                    Reason: $"REGRA Nº 1: passo bloqueado — a descrição implica obtenção ou distribuição de driver (termo detectado: \"{termo}\").");
+                    Reason: $"RULE #1: step blocked — description implies driver acquisition or distribution (detected term: \"{term}\").");
             }
         }
 
         return new PolicyDecision(
             Allowed: true,
-            Reason: "Passo permitido: reparo local sobre o estado existente da máquina, sem obter ou distribuir driver.");
+            Reason: "Step allowed: local repair over the machine's existing state, without acquiring or distributing drivers.");
     }
 
-    /// <summary>Normaliza o texto removendo diacríticos (NFD) para comparação tolerante.</summary>
-    private static string RemoverAcentos(string texto)
+    /// <summary>Normalizes text by stripping diacritics (NFD) for tolerant comparison.</summary>
+    private static string RemoveDiacritics(string text)
     {
-        var formaNormalizada = texto.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(formaNormalizada.Length);
-        foreach (var c in formaNormalizada)
+        var normalizedForm = text.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalizedForm.Length);
+        foreach (var c in normalizedForm)
         {
             if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
             {

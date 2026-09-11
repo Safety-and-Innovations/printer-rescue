@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core.Interfaces;
 
-/// <summary>Executa ações no sistema. Implementação Windows vive nos adapters.</summary>
+/// <summary>Runs actions against the system. The Windows implementation lives in the adapters.</summary>
 public interface IRepairExecutor
 {
     bool IsElevated();

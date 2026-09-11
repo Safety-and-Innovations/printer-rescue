@@ -3,8 +3,8 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Workflows;
 
 /// <summary>
-/// Captura o estado funcional atual de uma impressora a partir do gateway,
-/// produzindo um snapshot completo (porta, fila, driver, permissões, padrões).
+/// Captures the current functional state of a printer from the gateway,
+/// producing a complete snapshot (port, queue, driver, permissions, defaults).
 /// </summary>
 public sealed class CaptureWorkflow
 {
@@ -43,6 +43,6 @@ public sealed class CaptureWorkflow
             Driver: driver,
             Permissions: permissions,
             Defaults: defaults,
-            SchemaVersion: Snapshots.SnapshotStore.SchemaVersionAtual);
+            SchemaVersion: Snapshots.SnapshotStore.CurrentSchemaVersion);
     }
 }

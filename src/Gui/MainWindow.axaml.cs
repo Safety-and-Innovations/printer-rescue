@@ -14,8 +14,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Composição real quando no Windows; fora dele a janela abre com o
-        // gateway indisponível e a barra de status explica o motivo.
+        // Real composition on Windows; elsewhere the window opens with the
+        // gateway unavailable and the status bar explains why.
         if (OperatingSystem.IsWindows())
         {
             var gateway = new WinspoolPrintGateway();
@@ -33,8 +33,8 @@ public partial class MainWindow : Window
         else
         {
             DataContext = new MainWindowViewModel(
-                new GatewaysIndisponivel(),
-                new EnginesIndisponivel());
+                new UnavailableGateway(),
+                new UnavailableEngine());
         }
     }
 
@@ -44,31 +44,31 @@ public partial class MainWindow : Window
     }
 }
 
-/// <summary>Gateway placeholder para execução fora do Windows: reporta no status.</summary>
-internal sealed class GatewaysIndisponivel : Core.Interfaces.IPrintSystemGateway
+/// <summary>Placeholder gateway for running off Windows: reports via status.</summary>
+internal sealed class UnavailableGateway : Core.Interfaces.IPrintSystemGateway
 {
     public Task<System.Collections.Generic.IReadOnlyList<Core.PrinterTarget>> ListPrintersAsync(System.Threading.CancellationToken ct = default)
-        => throw new PlatformNotSupportedException("O acesso às impressoras requer execução no Windows.");
+        => throw new PlatformNotSupportedException("Printer access requires running on Windows.");
 
     public Task<Core.PortConfig?> GetPortAsync(string portName, System.Threading.CancellationToken ct = default)
-        => throw new PlatformNotSupportedException("Requer Windows.");
+        => throw new PlatformNotSupportedException("Requires Windows.");
 
     public Task<Core.QueueState> GetQueueStateAsync(string queueName, System.Threading.CancellationToken ct = default)
-        => throw new PlatformNotSupportedException("Requer Windows.");
+        => throw new PlatformNotSupportedException("Requires Windows.");
 
     public Task<Core.DriverInfo?> GetDriverInfoAsync(string driverName, System.Threading.CancellationToken ct = default)
-        => throw new PlatformNotSupportedException("Requer Windows.");
+        => throw new PlatformNotSupportedException("Requires Windows.");
 
     public Task<System.Collections.Generic.IReadOnlyDictionary<string, string>> GetPermissionsSddlAsync(string queueName, System.Threading.CancellationToken ct = default)
-        => throw new PlatformNotSupportedException("Requer Windows.");
+        => throw new PlatformNotSupportedException("Requires Windows.");
 
     public Task<System.Collections.Generic.IReadOnlyDictionary<string, string>> GetDefaultsAsync(string queueName, System.Threading.CancellationToken ct = default)
-        => throw new PlatformNotSupportedException("Requer Windows.");
+        => throw new PlatformNotSupportedException("Requires Windows.");
 }
 
-/// <summary>Engine placeholder para execução fora do Windows.</summary>
-internal sealed class EnginesIndisponivel : Core.Interfaces.IDiagnosticEngine
+/// <summary>Placeholder engine for running off Windows.</summary>
+internal sealed class UnavailableEngine : Core.Interfaces.IDiagnosticEngine
 {
     public Task<Core.DiagnosticReport> DiagnoseAndPlanAsync(Core.PrinterTarget target, System.Threading.CancellationToken ct = default)
-        => throw new PlatformNotSupportedException("O diagnóstico requer execução no Windows.");
+        => throw new PlatformNotSupportedException("Diagnostics requires running on Windows.");
 }

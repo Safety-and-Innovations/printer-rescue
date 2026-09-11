@@ -3,14 +3,14 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Diagnostics;
 
 /// <summary>
-/// Executa a sequência determinística de checks na ordem contratual de CheckId,
-/// aplica gating do spooler (spooler Fail ⇒ demais checks NotApplicable) e anexa
-/// o plano de reparo gerado pelo IRepairPlanner com o último snapshot válido.
+/// Runs the deterministic check sequence in the contractual CheckId order,
+/// applies spooler gating (spooler Fail implies remaining checks NotApplicable),
+/// and attaches the repair plan produced by the IRepairPlanner with the latest valid snapshot.
 /// </summary>
 public sealed class DiagnosticEngine : IDiagnosticEngine
 {
-    /// <summary>Ordem contratual de execução: a própria ordem de declaração do enum.</summary>
-    private static readonly CheckId[] OrdemContratual =
+    /// <summary>Contractual execution order: the enum declaration order itself.</summary>
+    private static readonly CheckId[] ContractualOrder =
     [
         CheckId.SpoolerRunning,
         CheckId.PortOpen,
@@ -45,37 +45,37 @@ public sealed class DiagnosticEngine : IDiagnosticEngine
     {
         ArgumentNullException.ThrowIfNull(target);
 
-        var inicioUtc = DateTime.UtcNow;
+        var startedUtc = DateTime.UtcNow;
 
-        var porId = new Dictionary<CheckId, IDiagnosticCheck>();
+        var byId = new Dictionary<CheckId, IDiagnosticCheck>();
         foreach (var check in _checks)
         {
-            if (!porId.TryAdd(check.Id, check))
+            if (!byId.TryAdd(check.Id, check))
             {
-                throw new InvalidOperationException($"Check duplicado injetado: {check.Id}.");
+                throw new InvalidOperationException($"Duplicate check injected: {check.Id}.");
             }
         }
 
-        var resultados = new List<CheckOutcome>(OrdemContratual.Length);
-        var spoolerFalhou = false;
-        foreach (var id in OrdemContratual)
+        var results = new List<CheckOutcome>(ContractualOrder.Length);
+        var spoolerFailed = false;
+        foreach (var id in ContractualOrder)
         {
             ct.ThrowIfCancellationRequested();
 
-            if (spoolerFalhou && id != CheckId.SpoolerRunning)
+            if (spoolerFailed && id != CheckId.SpoolerRunning)
             {
-                resultados.Add(new CheckOutcome(
+                results.Add(new CheckOutcome(
                     id,
                     CheckResult.NotApplicable,
                     Severity.Info,
-                    "Não aplicável: diagnóstico abortado no check do spooler."));
+                    "Not applicable: diagnostics aborted at the spooler check."));
                 continue;
             }
 
-            if (!porId.TryGetValue(id, out var check))
+            if (!byId.TryGetValue(id, out var check))
             {
-                // Check ausente não bloqueia o relatório; fica registrado como não aplicável.
-                resultados.Add(new CheckOutcome(id, CheckResult.NotApplicable, Severity.Info, "Check não registrado no engine."));
+                // A missing check does not block the report; it is recorded as not applicable.
+                results.Add(new CheckOutcome(id, CheckResult.NotApplicable, Severity.Info, "Check not registered in the engine."));
                 continue;
             }
 
@@ -90,24 +90,24 @@ public sealed class DiagnosticEngine : IDiagnosticEngine
             }
             catch (Exception ex)
             {
-                // Exceção de um check nunca derruba o diagnóstico: vira Fail/Error.
+                // A check exception never takes down diagnostics: it becomes Fail/Error.
                 outcome = new CheckOutcome(id, CheckResult.Fail, Severity.Error,
-                    $"Falha inesperada ao executar o check {id}: {ex.Message}");
+                    $"Unexpected failure running check {id}: {ex.Message}");
             }
 
-            resultados.Add(outcome);
+            results.Add(outcome);
 
             if (id == CheckId.SpoolerRunning && outcome.Result == CheckResult.Fail)
             {
-                spoolerFalhou = true;
+                spoolerFailed = true;
             }
         }
 
-        var relatorioParcial = new DiagnosticReport(
-            AlvoId(target),
-            inicioUtc,
+        var partialReport = new DiagnosticReport(
+            TargetId(target),
+            startedUtc,
             DateTime.UtcNow,
-            resultados,
+            results,
             new RepairPlan(Guid.Empty, [], false));
 
         PrinterSnapshot? lastGood = null;
@@ -119,25 +119,25 @@ public sealed class DiagnosticEngine : IDiagnosticEngine
             }
             catch (System.IO.InvalidDataException)
             {
-                // Loja com dados inválidos não derruba o diagnóstico; segue sem snapshot.
+                // A store with invalid data does not take down diagnostics; proceed without a snapshot.
             }
         }
 
-        var plano = _planner.PlanRepairs(relatorioParcial, lastGood);
+        var plan = _planner.PlanRepairs(partialReport, lastGood);
 
-        return relatorioParcial with { Plan = plano };
+        return partialReport with { Plan = plan };
     }
 
     /// <summary>
-    /// Identificador estável do alvo: derivado do nome da impressora (determinístico
-    /// na sessão), pois PrinterTarget não carrega Guid próprio no contrato congelado.
+    /// Stable identifier for the target: derived from the printer name (deterministic
+    /// within the session), since PrinterTarget carries no Guid of its own in the frozen contract.
     /// </summary>
-    private static Guid AlvoId(PrinterTarget target)
+    private static Guid TargetId(PrinterTarget target)
         => new(HashToGuidBytes(target.Name));
 
-    private static byte[] HashToGuidBytes(string texto)
+    private static byte[] HashToGuidBytes(string text)
     {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(texto);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(text);
         var hash = System.Security.Cryptography.SHA256.HashData(bytes);
         var guid = new byte[16];
         Array.Copy(hash, guid, 16);

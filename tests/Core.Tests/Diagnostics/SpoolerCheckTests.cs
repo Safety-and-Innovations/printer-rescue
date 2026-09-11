@@ -6,7 +6,7 @@ namespace PrinterRescue.Core.Tests.Diagnostics;
 public sealed class SpoolerCheckTests
 {
     [Fact]
-    public async Task RunAsyncComSpoolerAcessivelRetornaPass()
+    public async Task RunAsyncWithReachableSpoolerReturnsPass()
     {
         var gateway = new FakePrintGateway();
         var check = new SpoolerCheck();
@@ -19,9 +19,9 @@ public sealed class SpoolerCheckTests
     }
 
     [Fact]
-    public async Task RunAsyncComSpoolerInacessivelRetornaFail()
+    public async Task RunAsyncWithUnreachableSpoolerReturnsFail()
     {
-        var gateway = new FakePrintGateway { ListPrintersError = new InvalidOperationException("RPC indisponível") };
+        var gateway = new FakePrintGateway { ListPrintersError = new InvalidOperationException("RPC unavailable") };
         var check = new SpoolerCheck();
 
         var outcome = await check.RunAsync(gateway, TestTargets.Tcp());

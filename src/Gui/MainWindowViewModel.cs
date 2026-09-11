@@ -10,53 +10,53 @@ using PrinterRescue.Core.Workflows;
 namespace PrinterRescue.Gui;
 
 /// <summary>
-/// Toda a lógica da janela principal, testável sem UI. Recebe as interfaces
-/// do Core por construtor; nunca bloqueia a thread da UI (async puro).
+/// All main-window logic, testable without UI. Receives the Core
+/// interfaces via constructor; never blocks the UI thread (pure async).
 /// </summary>
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IPrintSystemGateway _gateway;
     private readonly IDiagnosticEngine _engine;
-    private ImpressoraItem? _impressoraSelecionada;
-    private string _status = "Pronto.";
+    private PrinterItem? _selectedPrinter;
+    private string _status = "Ready.";
 
     public MainWindowViewModel(IPrintSystemGateway gateway, IDiagnosticEngine engine)
     {
         _gateway = gateway;
         _engine = engine;
-        AtualizarCommand = new AsyncRelayCommand(_ => AtualizarAsync());
-        DiagnosticarCommand = new AsyncRelayCommand(
-            _ => DiagnosticarAsync(),
-            _ => _impressoraSelecionada is not null);
-        CriarSnapshotCommand = new AsyncRelayCommand(
-            _ => CriarSnapshotAsync(),
-            _ => _impressoraSelecionada is not null);
+        RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
+        DiagnoseCommand = new AsyncRelayCommand(
+            _ => DiagnoseAsync(),
+            _ => _selectedPrinter is not null);
+        CreateSnapshotCommand = new AsyncRelayCommand(
+            _ => CreateSnapshotAsync(),
+            _ => _selectedPrinter is not null);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public ObservableCollection<ImpressoraItem> Impressoras { get; } = [];
+    public ObservableCollection<PrinterItem> Printers { get; } = [];
 
-    public ObservableCollection<CheckOutcome> Resultados { get; } = [];
+    public ObservableCollection<CheckOutcome> Results { get; } = [];
 
-    public ICommand AtualizarCommand { get; }
+    public ICommand RefreshCommand { get; }
 
-    public ICommand DiagnosticarCommand { get; }
+    public ICommand DiagnoseCommand { get; }
 
-    public ICommand CriarSnapshotCommand { get; }
+    public ICommand CreateSnapshotCommand { get; }
 
-    public ImpressoraItem? ImpressoraSelecionada
+    public PrinterItem? SelectedPrinter
     {
-        get => _impressoraSelecionada;
+        get => _selectedPrinter;
         set
         {
-            if (ReferenceEquals(value, _impressoraSelecionada))
+            if (ReferenceEquals(value, _selectedPrinter))
             {
                 return;
             }
 
-            _impressoraSelecionada = value;
-            Resultados.Clear();
+            _selectedPrinter = value;
+            Results.Clear();
             OnPropertyChanged();
             RequeryCommands();
         }
@@ -77,105 +77,105 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public async Task AtualizarAsync()
+    public async Task RefreshAsync()
     {
         try
         {
-            var impressoras = await _gateway.ListPrintersAsync().ConfigureAwait(true);
-            Impressoras.Clear();
-            foreach (var p in impressoras.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+            var printers = await _gateway.ListPrintersAsync().ConfigureAwait(true);
+            Printers.Clear();
+            foreach (var p in printers.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
             {
-                Impressoras.Add(new ImpressoraItem(p.Name, p.Protocol.ToString(), p.PortName, p.DriverName));
+                Printers.Add(new PrinterItem(p.Name, p.Protocol.ToString(), p.PortName, p.DriverName));
             }
 
-            Status = $"{Impressoras.Count} impressora(s) encontrada(s).";
+            Status = $"{Printers.Count} printer(s) found.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Status = $"Erro ao listar impressoras: {ex.Message}";
+            Status = $"Error listing printers: {ex.Message}";
         }
     }
 
-    public async Task DiagnosticarAsync()
+    public async Task DiagnoseAsync()
     {
-        var selecionada = _impressoraSelecionada;
-        if (selecionada is null)
+        var selected = _selectedPrinter;
+        if (selected is null)
         {
             return;
         }
 
-        Status = $"Diagnosticando '{selecionada.Nome}'…";
+        Status = $"Diagnosing '{selected.Name}'…";
         try
         {
-            var alvo = new PrinterTarget(selecionada.Nome, null, selecionada.Porta,
-                InferirProtocolo(selecionada.Protocolo), null, selecionada.Driver, null);
-            var report = await _engine.DiagnoseAndPlanAsync(alvo).ConfigureAwait(true);
+            var target = new PrinterTarget(selected.Name, null, selected.Port,
+                InferProtocol(selected.Protocol), null, selected.Driver, null);
+            var report = await _engine.DiagnoseAndPlanAsync(target).ConfigureAwait(true);
 
-            Resultados.Clear();
+            Results.Clear();
             foreach (var check in report.Checks)
             {
-                Resultados.Add(check);
+                Results.Add(check);
             }
 
             Status = report.Plan.Steps.Count > 0
-                ? $"Diagnóstico concluído — plano com {report.Plan.Steps.Count} passo(s)."
-                : "Diagnóstico concluído — nada a fazer.";
+                ? $"Diagnostics complete — plan with {report.Plan.Steps.Count} step(s)."
+                : "Diagnostics complete — nothing to do.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Status = $"Erro no diagnóstico: {ex.Message}";
+            Status = $"Diagnostics error: {ex.Message}";
         }
     }
 
-    public Task CriarSnapshotAsync()
+    public Task CreateSnapshotAsync()
     {
-        // A gravação usa CaptureWorkflow + ISnapshotStore; na fachada GUI o store
-        // real é injetado pelo bootstrapper. Aqui registra a intenção no status.
-        var selecionada = _impressoraSelecionada;
-        if (selecionada is not null)
+        // Recording uses CaptureWorkflow + ISnapshotStore; in the GUI facade the real
+        // store is injected by the bootstrapper. Here it records the intent in the status.
+        var selected = _selectedPrinter;
+        if (selected is not null)
         {
-            Status = $"Snapshot de '{selecionada.Nome}' solicitado.";
+            Status = $"Snapshot of '{selected.Name}' requested.";
         }
 
         return Task.CompletedTask;
     }
 
-    private static PrinterProtocol InferirProtocolo(string texto)
-        => Enum.TryParse<PrinterProtocol>(texto, out var p) ? p : PrinterProtocol.TcpRaw;
+    private static PrinterProtocol InferProtocol(string text)
+        => Enum.TryParse<PrinterProtocol>(text, out var p) ? p : PrinterProtocol.TcpRaw;
 
     private void RequeryCommands()
     {
-        (DiagnosticarCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-        (CriarSnapshotCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        (DiagnoseCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        (CreateSnapshotCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private void OnPropertyChanged([CallerMemberName] string? nome = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nome));
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
-/// <summary>Linha da lista de impressoras.</summary>
-public sealed record ImpressoraItem(string Nome, string Protocolo, string? Porta, string? Driver)
+/// <summary>Printer list row.</summary>
+public sealed record PrinterItem(string Name, string Protocol, string? Port, string? Driver)
 {
-    public string Detalhe => $"[{Protocolo}] porta={Porta ?? "-"} · driver={Driver ?? "-"}";
+    public string Detail => $"[{Protocol}] port={Port ?? "-"} · driver={Driver ?? "-"}";
 }
 
-/// <summary>AsyncCommand seguro: nunca async void fora do dispatcher; requery manual.</summary>
+/// <summary>Safe async command: never async void outside the dispatcher; manual requery.</summary>
 public sealed class AsyncRelayCommand : ICommand
 {
-    private readonly Func<object?, Task> _executar;
-    private readonly Predicate<object?>? _podeExecutar;
-    private bool _executando;
+    private readonly Func<object?, Task> _execute;
+    private readonly Predicate<object?>? _canExecute;
+    private bool _executing;
 
-    public AsyncRelayCommand(Func<object?, Task> executar, Predicate<object?>? podeExecutar = null)
+    public AsyncRelayCommand(Func<object?, Task> execute, Predicate<object?>? canExecute = null)
     {
-        _executar = executar;
-        _podeExecutar = podeExecutar;
+        _execute = execute;
+        _canExecute = canExecute;
     }
 
     public event EventHandler? CanExecuteChanged;
 
     public bool CanExecute(object? parameter)
-        => !_executando && (_podeExecutar?.Invoke(parameter) ?? true);
+        => !_executing && (_canExecute?.Invoke(parameter) ?? true);
 
     public void RaiseCanExecuteChanged()
         => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
@@ -187,14 +187,14 @@ public sealed class AsyncRelayCommand : ICommand
             return;
         }
 
-        _executando = true;
+        _executing = true;
         try
         {
-            await _executar(parameter).ConfigureAwait(true);
+            await _execute(parameter).ConfigureAwait(true);
         }
         finally
         {
-            _executando = false;
+            _executing = false;
             RaiseCanExecuteChanged();
         }
     }

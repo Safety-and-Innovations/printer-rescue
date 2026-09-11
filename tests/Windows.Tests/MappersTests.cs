@@ -4,12 +4,12 @@ using Xunit;
 namespace PrinterRescue.Tests.Windows;
 
 /// <summary>
-/// Testes da lógica PURA do adapter (mapeamentos e heurísticas) — rodam em qualquer SO.
-/// As chamadas nativas reais ao winspool.drv só executam no Windows (guards CA1416).
+/// Tests for the adapter's PURE logic (mappings and heuristics) — run on any OS.
+/// Real native winspool.drv calls only run on Windows (CA1416 guards).
 /// </summary>
 public sealed class MappersTests
 {
-    // ---- Protocolo a partir do nome da porta -------------------------------
+    // ---- Protocol from the port-name prefix -------------------------------
 
     [Theory]
     [InlineData("USB001", PrinterRescue.Core.PrinterProtocol.Usb)]
@@ -18,15 +18,15 @@ public sealed class MappersTests
     [InlineData("PORTPROMPT:", PrinterRescue.Core.PrinterProtocol.TcpRaw)]
     [InlineData("", PrinterRescue.Core.PrinterProtocol.TcpRaw)]
     [InlineData(null, PrinterRescue.Core.PrinterProtocol.TcpRaw)]
-    public void InferirProtocoloPorPrefixoDaPorta(string? porta, PrinterRescue.Core.PrinterProtocol esperado)
-        => Assert.Equal(esperado, Mappers.InferirProtocolo(porta));
+    public void InferProtocolFromPortPrefix(string? port, PrinterRescue.Core.PrinterProtocol expected)
+        => Assert.Equal(expected, Mappers.InferProtocol(port));
 
-    // ---- Configuração de porta TCP derivada do nome ------------------------
+    // ---- TCP port config derived from the name ----------------------------
 
     [Fact]
-    public void DerivarPortConfigDeNomeIpPadrao9100()
+    public void DerivePortConfigFromDefaultIpName9100()
     {
-        var cfg = Mappers.DerivarPortConfig("IP_192.168.0.40");
+        var cfg = Mappers.DerivePortConfig("IP_192.168.0.40");
 
         Assert.NotNull(cfg);
         Assert.Equal("IP_192.168.0.40", cfg.PortName);
@@ -36,9 +36,9 @@ public sealed class MappersTests
     }
 
     [Fact]
-    public void DerivarPortConfigDeNomeIpComPortaExplicita()
+    public void DerivePortConfigFromIpNameWithExplicitPort()
     {
-        var cfg = Mappers.DerivarPortConfig("IP_10.0.0.8_631");
+        var cfg = Mappers.DerivePortConfig("IP_10.0.0.8_631");
 
         Assert.NotNull(cfg);
         Assert.Equal("10.0.0.8", cfg.HostAddress);
@@ -49,48 +49,48 @@ public sealed class MappersTests
     [Theory]
     [InlineData("USB001")]
     [InlineData("WSD-x")]
-    [InlineData("não-é-ip")]
-    public void DerivarPortConfigRetornaNullParaNaoTcp(string porta)
-        => Assert.Null(Mappers.DerivarPortConfig(porta));
+    [InlineData("not-an-ip")]
+    public void DerivePortConfigReturnsNullForNonTcp(string port)
+        => Assert.Null(Mappers.DerivePortConfig(port));
 
-    // ---- Jobs presos -------------------------------------------------------
+    // ---- Stuck jobs --------------------------------------------------------
 
     [Fact]
-    public void JobComFlagDeErroOuBloqueioEhPreso()
+    public void JobWithErrorOrBlockedFlagIsStuck()
     {
         const uint JobStatusError = 0x00000002;
         const uint JobStatusBlocked = 0x00000400;
         const uint JobStatusRetained = 0x00000800;
-        var agora = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
 
-        Assert.True(Mappers.JobPreso(JobStatusError, submetidoEmUtc: agora.AddMinutes(-5), agoraUtc: agora));
-        Assert.True(Mappers.JobPreso(JobStatusBlocked, submetidoEmUtc: agora.AddMinutes(-5), agoraUtc: agora));
-        Assert.True(Mappers.JobPreso(JobStatusRetained, submetidoEmUtc: agora.AddMinutes(-5), agoraUtc: agora));
+        Assert.True(Mappers.IsJobStuck(JobStatusError, submittedUtc: now.AddMinutes(-5), nowUtc: now));
+        Assert.True(Mappers.IsJobStuck(JobStatusBlocked, submittedUtc: now.AddMinutes(-5), nowUtc: now));
+        Assert.True(Mappers.IsJobStuck(JobStatusRetained, submittedUtc: now.AddMinutes(-5), nowUtc: now));
     }
 
     [Fact]
-    public void JobAntigoSemStatusEhPreso()
+    public void OldJobWithoutStatusIsStuck()
     {
-        var agora = DateTime.UtcNow;
-        Assert.True(Mappers.JobPreso(status: 0, submetidoEmUtc: agora.AddHours(-25), agoraUtc: agora));
+        var now = DateTime.UtcNow;
+        Assert.True(Mappers.IsJobStuck(status: 0, submittedUtc: now.AddHours(-25), nowUtc: now));
     }
 
     [Fact]
-    public void JobNormalRecenteNaoEhPreso()
+    public void RecentNormalJobIsNotStuck()
     {
-        var agora = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
         const uint JobStatusPrinting = 0x00000004;
-        Assert.False(Mappers.JobPreso(JobStatusPrinting, submetidoEmUtc: agora.AddMinutes(-1), agoraUtc: agora));
-        Assert.False(Mappers.JobPreso(0, agora.AddMinutes(-30), agora));
+        Assert.False(Mappers.IsJobStuck(JobStatusPrinting, submittedUtc: now.AddMinutes(-1), nowUtc: now));
+        Assert.False(Mappers.IsJobStuck(0, now.AddMinutes(-30), now));
     }
 
-    // ---- Defaults do DevMode ----------------------------------------------
+    // ---- DevMode defaults --------------------------------------------------
 
     [Fact]
-    public void DevModePadraoDeFabricaNaoModificado()
+    public void DevModeFactoryDefaultsUnmodified()
     {
-        // DM_OUT_BUFFER padrão: A4=9, cópias 1, monocromático=1, duplex simplex=1
-        var d = Mappers.MapearDefaults(paperSize: 9, copies: 1, color: 1, duplex: 1);
+        // Default DM_OUT_BUFFER: A4=9, 1 copy, monochrome=1, simplex duplex=1
+        var d = Mappers.MapDefaults(paperSize: 9, copies: 1, color: 1, duplex: 1);
 
         Assert.Equal("9", d["paperSize"]);
         Assert.Equal("1", d["copies"]);
@@ -99,9 +99,9 @@ public sealed class MappersTests
     }
 
     [Fact]
-    public void DevModeColoridoEDuplex()
+    public void DevModeColorAndDuplex()
     {
-        var d = Mappers.MapearDefaults(paperSize: 1, copies: 3, color: 2, duplex: 2);
+        var d = Mappers.MapDefaults(paperSize: 1, copies: 3, color: 2, duplex: 2);
 
         Assert.Equal("true", d["color"]);
         Assert.Equal("true", d["duplex"]);
@@ -109,12 +109,12 @@ public sealed class MappersTests
     }
 
     [Fact]
-    public void DevModeZeroProduzValoresNeutros()
+    public void DevModeZeroProducesNeutralValues()
     {
-        var d = Mappers.MapearDefaults(0, 0, 0, 0);
+        var d = Mappers.MapDefaults(0, 0, 0, 0);
 
         Assert.Equal("0", d["paperSize"]);
-        Assert.Equal("1", d["copies"]); // nunca grava 0 cópias
+        Assert.Equal("1", d["copies"]); // never records 0 copies
         Assert.Equal("false", d["color"]);
         Assert.Equal("false", d["duplex"]);
     }
@@ -122,11 +122,11 @@ public sealed class MappersTests
     // ---- Driver ------------------------------------------------------------
 
     [Fact]
-    public void DetectarIppClassDriverPorNome()
+    public void DetectIppClassDriverByName()
     {
-        Assert.True(Mappers.EhIppClassDriver("Microsoft IPP Class Driver"));
-        Assert.True(Mappers.EhIppClassDriver("microsoft ipp class driver"));
-        Assert.False(Mappers.EhIppClassDriver("HP Universal PCL6"));
-        Assert.False(Mappers.EhIppClassDriver(""));
+        Assert.True(Mappers.IsIppClassDriver("Microsoft IPP Class Driver"));
+        Assert.True(Mappers.IsIppClassDriver("microsoft ipp class driver"));
+        Assert.False(Mappers.IsIppClassDriver("HP Universal PCL6"));
+        Assert.False(Mappers.IsIppClassDriver(""));
     }
 }

@@ -2,7 +2,7 @@ using Avalonia;
 
 namespace PrinterRescue.Gui;
 
-/// <summary>Aplicativo Avalonia. UI completa entregue pelo agente B3.</summary>
+/// <summary>Avalonia application. Full UI delivered by agent B3.</summary>
 public class App : Application
 {
     public override void Initialize()

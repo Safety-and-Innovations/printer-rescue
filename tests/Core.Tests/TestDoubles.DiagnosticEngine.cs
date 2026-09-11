@@ -2,29 +2,29 @@ using PrinterRescue.Core.Interfaces;
 
 namespace PrinterRescue.Core.Tests;
 
-/// <summary>Check falso: devolve um outcome pré-definido sem tocar no gateway.</summary>
+/// <summary>Fake check: returns a pre-defined outcome without touching the gateway.</summary>
 public sealed class StubCheck : IDiagnosticCheck
 {
-    private readonly Func<PrinterTarget, CheckOutcome> _executar;
+    private readonly Func<PrinterTarget, CheckOutcome> _run;
 
     public StubCheck(CheckId id, CheckOutcome outcome)
         : this(id, _ => outcome)
     {
     }
 
-    public StubCheck(CheckId id, Func<PrinterTarget, CheckOutcome> executar)
+    public StubCheck(CheckId id, Func<PrinterTarget, CheckOutcome> run)
     {
         Id = id;
-        _executar = executar;
+        _run = run;
     }
 
     public CheckId Id { get; }
 
     public Task<CheckOutcome> RunAsync(IPrintSystemGateway gateway, PrinterTarget target, CancellationToken ct = default)
-        => Task.FromResult(_executar(target));
+        => Task.FromResult(_run(target));
 }
 
-/// <summary>Check falso que sempre lança exceção — valida o tratamento do engine.</summary>
+/// <summary>Fake check that always throws — validates the engine's handling.</summary>
 public sealed class ThrowingCheck : IDiagnosticCheck
 {
     public ThrowingCheck(CheckId id) => Id = id;
@@ -35,10 +35,10 @@ public sealed class ThrowingCheck : IDiagnosticCheck
         => throw new InvalidOperationException("boom");
 }
 
-/// <summary>Planejador falso que registra os argumentos recebidos do engine.</summary>
+/// <summary>Fake planner that records the arguments received from the engine.</summary>
 public sealed class FakeRepairPlanner : IRepairPlanner
 {
-    private RepairPlan? _planoRetorno;
+    private RepairPlan? _returnPlan;
 
     public int Calls { get; private set; }
 
@@ -46,21 +46,21 @@ public sealed class FakeRepairPlanner : IRepairPlanner
 
     public PrinterSnapshot? LastGood { get; private set; }
 
-    /// <summary>Quando definido, é o plano devolvido por PlanRepairs.</summary>
-    public RepairPlan? PlanoRetorno { get => _planoRetorno; init => _planoRetorno = value; }
+    /// <summary>When set, this is the plan returned by PlanRepairs.</summary>
+    public RepairPlan? ReturnPlan { get => _returnPlan; init => _returnPlan = value; }
 
     public RepairPlan PlanRepairs(DiagnosticReport report, PrinterSnapshot? lastGood)
     {
         Calls++;
         ReceivedReport = report;
         LastGood = lastGood;
-        return _planoRetorno ?? new RepairPlan(report.TargetId, [], false);
+        return _returnPlan ?? new RepairPlan(report.TargetId, [], false);
     }
 }
 
 /// <summary>
-/// Loja de snapshots falsa que registra o nome consultado — distinta de FakeSnapshotStore
-/// para não acoplar os testes do engine ao comportamento da outra double.
+/// Fake snapshot store that records the queried name — distinct from FakeSnapshotStore
+/// so engine tests are not coupled to the other double's behavior.
 /// </summary>
 public sealed class RecordingSnapshotStore : ISnapshotStore
 {
@@ -68,13 +68,13 @@ public sealed class RecordingSnapshotStore : ISnapshotStore
 
     public RecordingSnapshotStore(PrinterSnapshot? latest = null) => _latest = latest;
 
-    public string? NomeConsultado { get; private set; }
+    public string? QueriedName { get; private set; }
 
     public Task SaveAsync(PrinterSnapshot snapshot, CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<PrinterSnapshot?> FindLatestForAsync(string printerName, CancellationToken ct = default)
     {
-        NomeConsultado = printerName;
+        QueriedName = printerName;
         return Task.FromResult(_latest);
     }
 

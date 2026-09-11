@@ -1,6 +1,6 @@
 namespace PrinterRescue.Core.Interfaces;
 
-/// <summary>Acesso ao estado real do subsistema de impressão.</summary>
+/// <summary>Access to the real state of the print subsystem.</summary>
 public interface IPrintSystemGateway
 {
     Task<IReadOnlyList<global::PrinterRescue.Core.PrinterTarget>> ListPrintersAsync(CancellationToken ct = default);

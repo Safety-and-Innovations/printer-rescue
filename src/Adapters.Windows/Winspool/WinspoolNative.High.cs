@@ -4,45 +4,45 @@ using System.Runtime.Versioning;
 namespace PrinterRescue.Adapters.Windows.Winspool;
 
 /// <summary>
-/// Parte de alto nível do adapter: enumerações e leituras compostas sobre os
-/// P/Invoke declarados em WinspoolNative (parte gerada por LibraryImport).
+/// High-level part of the adapter: composite enumerations and reads over the
+/// P/Invoke declared in WinspoolNative (LibraryImport-generated part).
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static partial class WinspoolNative
 {
-    public sealed record InfoImpressora(string Nome, string? ShareName, string? PortName, string? DriverName, string? DriverVersion);
+    public sealed record PrinterInfo(string Name, string? ShareName, string? PortName, string? DriverName, string? DriverVersion);
 
     public sealed record Job(uint JobId, uint Status, DateTime SubmittedUtc);
 
-    public sealed record DriverLocal(string Nome, string? Versao, string? InfName);
+    public sealed record DriverLocal(string Name, string? Version, string? InfName);
 
     public sealed record DevModeLocal(int PaperSize, int Copies, int Color, int Duplex);
 
     public static List<string> EnumPrinterNames()
     {
-        var nomes = new List<string>();
+        var names = new List<string>();
         var ok = EnumPrintersW(
             PrinterEnumLocal | PrinterEnumConnections,
             null, 4 /* PRINTER_INFO_4 */,
             null, 0, out var needed, out var returned);
         if (!ok && needed == 0)
         {
-            return nomes;
+            return names;
         }
 
         var buffer = new byte[needed];
         if (!EnumPrintersW(PrinterEnumLocal | PrinterEnumConnections, null, 4, buffer, needed, out _, out returned))
         {
-            return nomes;
+            return names;
         }
 
-        return LerNomesDoBuffer(buffer, returned);
+        return ReadNamesFromBuffer(buffer, returned);
     }
 
-    /// <summary>Leitura correta do array embutido de PRINTER_INFO_4W no buffer.</summary>
-    private static List<string> LerNomesDoBuffer(byte[] buffer, uint count)
+    /// <summary>Correct read of the embedded PRINTER_INFO_4W array in the buffer.</summary>
+    private static List<string> ReadNamesFromBuffer(byte[] buffer, uint count)
     {
-        var nomes = new List<string>((int)count);
+        var names = new List<string>((int)count);
         var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
         try
         {
@@ -52,10 +52,10 @@ internal static partial class WinspoolNative
             {
                 var elementPtr = IntPtr.Add(basePtr, i * size);
                 var info = Marshal.PtrToStructure<PRINTER_INFO_4W>(elementPtr);
-                var nome = PtrToString(info.pPrinterName);
-                if (nome.Length > 0)
+                var name = PtrToString(info.pPrinterName);
+                if (name.Length > 0)
                 {
-                    nomes.Add(nome);
+                    names.Add(name);
                 }
             }
         }
@@ -64,12 +64,12 @@ internal static partial class WinspoolNative
             handle.Free();
         }
 
-        return nomes;
+        return names;
     }
 
-    public static bool ImpressoraExiste(string nome)
+    public static bool PrinterExists(string name)
     {
-        if (!OpenPrinterW(nome, out var handle, IntPtr.Zero))
+        if (!OpenPrinterW(name, out var handle, IntPtr.Zero))
         {
             return false;
         }
@@ -78,9 +78,9 @@ internal static partial class WinspoolNative
         return true;
     }
 
-    public static InfoImpressora? ObterInfoImpressora(string nome)
+    public static PrinterInfo? GetPrinterInfo(string name)
     {
-        if (!OpenPrinterW(nome, out var handle, IntPtr.Zero))
+        if (!OpenPrinterW(name, out var handle, IntPtr.Zero))
         {
             return null;
         }
@@ -102,12 +102,12 @@ internal static partial class WinspoolNative
             try
             {
                 var info2 = Marshal.PtrToStructure<PRINTER_INFO_2W>(h.AddrOfPinnedObject());
-                return new InfoImpressora(
-                    nome,
+                return new PrinterInfo(
+                    name,
                     ShareName: PtrToOptional(info2.pShareName),
                     PortName: PtrToOptional(info2.pPortName),
                     DriverName: PtrToOptional(info2.pDriverName),
-                    DriverVersion: null); // versão vem do repositório de drivers, abaixo
+                    DriverVersion: null); // version comes from the driver repository, below
                 ;
             }
             finally
@@ -121,10 +121,10 @@ internal static partial class WinspoolNative
         }
     }
 
-    public static List<Job> ObterJobs(string impressora)
+    public static List<Job> GetJobs(string printer)
     {
         var jobs = new List<Job>();
-        if (!OpenPrinterW(impressora, out var handle, IntPtr.Zero))
+        if (!OpenPrinterW(printer, out var handle, IntPtr.Zero))
         {
             return jobs;
         }
@@ -183,7 +183,7 @@ internal static partial class WinspoolNative
         }
 
         // DRIVER_INFO_2W: DWORD cVersion; LPWSTR pName, pEnvironment, pDriverPath,
-        // pDataFile, pConfigFile — tamanho fixo calculável.
+        // pDataFile, pConfigFile — computable fixed size.
         var size = Marshal.SizeOf<IntPtr>() * 6 + sizeof(int);
         var h = GCHandle.Alloc(buffer, GCHandleType.Pinned);
         try
@@ -196,8 +196,8 @@ internal static partial class WinspoolNative
                 var pDriverPath = Marshal.ReadIntPtr(basePtr, IntPtr.Size * 3);
                 drivers.Add(new DriverLocal(
                     PtrToString(pName),
-                    Versao: cVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    InfName: ExtrairInfDeCaminho(PtrToString(pDriverPath))));
+                    Version: cVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    InfName: ExtractInfFromPath(PtrToString(pDriverPath))));
             }
         }
         finally
@@ -208,12 +208,12 @@ internal static partial class WinspoolNative
         return drivers;
     }
 
-    public static string? ObterSddl(string impressora)
+    public static string? GetSddl(string printer)
     {
-        // Leitura do descritor de segurança via GetPrinter nível 3 (PRINTER_INFO_3W)
-        // exige o mesmo handle aberto com READ_CONTROL; simplificado para retorno vazio
-        // quando não concedido — snapshot grava o que conseguiu ler.
-        if (!OpenPrinterW(impressora, out var handle, IntPtr.Zero))
+        // Security descriptor read via GetPrinter level 3 (PRINTER_INFO_3W)
+        // requires the same handle opened with READ_CONTROL; simplified to an empty
+        // return when not granted — the snapshot records whatever it could read.
+        if (!OpenPrinterW(printer, out var handle, IntPtr.Zero))
         {
             return null;
         }
@@ -254,9 +254,9 @@ internal static partial class WinspoolNative
         }
     }
 
-    public static DevModeLocal? ObterDevMode(string impressora)
+    public static DevModeLocal? GetDevMode(string printer)
     {
-        if (!OpenPrinterW(impressora, out var handle, IntPtr.Zero))
+        if (!OpenPrinterW(printer, out var handle, IntPtr.Zero))
         {
             return null;
         }
@@ -283,11 +283,11 @@ internal static partial class WinspoolNative
                     return null;
                 }
 
-                // DEVMODEW: dmDeviceName[32], dmSpecVersion..dmSize/dmDriverExtra (offsets fixos),
-                // depois campos. Offsets estáveis em processos de 64 bits também.
-                const short offsetCopies = 34 * 2 + sizeof(short) * 8; // após dmFields
-                _ = offsetCopies; // cálculo detalhado fica no leitor dedicado abaixo
-                return LerDevMode(info2.pDevMode);
+                // DEVMODEW: dmDeviceName[32], dmSpecVersion..dmSize/dmDriverExtra (fixed offsets),
+                // then fields. Stable offsets in 64-bit processes too.
+                const short offsetCopies = 34 * 2 + sizeof(short) * 8; // after dmFields
+                _ = offsetCopies; // detailed math lives in the dedicated reader below
+                return ReadDevMode(info2.pDevMode);
             }
             finally
             {
@@ -300,12 +300,12 @@ internal static partial class WinspoolNative
         }
     }
 
-    /// <summary>Leitura dos campos do DEVMODEW usados pelo snapshot.</summary>
-    private static DevModeLocal? LerDevMode(IntPtr devMode)
+    /// <summary>Read of the DEVMODEW fields used by the snapshot.</summary>
+    private static DevModeLocal? ReadDevMode(IntPtr devMode)
     {
-        // Estrutura DEVMODEW (winuser.h): offsets em bytes a partir do início.
+        // DEVMODEW layout (winuser.h): byte offsets from the start.
         // dmDeviceName[32 wchar]=64B; dmSpecVersion(2) dmDriverVersion(2) dmSize(2)
-        // dmDriverExtra(2) dmFields(4) => 76B até aqui; depois:
+        // dmDriverExtra(2) dmFields(4) => 76B up to here; then:
         // dmOrientation(2) dmPaperSize(2) dmPaperLength(2) dmPaperWidth(2)
         // dmScale(2) dmCopies(2) dmDefaultSource(2) dmPrintQuality(2)
         // dmColor(2) dmDuplex(2) ...
@@ -327,18 +327,18 @@ internal static partial class WinspoolNative
         return s.Length == 0 ? null : s;
     }
 
-    private static string? ExtrairInfDeCaminho(string caminho)
+    private static string? ExtractInfFromPath(string path)
     {
-        if (string.IsNullOrEmpty(caminho))
+        if (string.IsNullOrEmpty(path))
         {
             return null;
         }
 
-        var nome = Path.GetFileName(caminho);
-        return nome.EndsWith(".inf", StringComparison.OrdinalIgnoreCase) ? nome : null;
+        var fileName = Path.GetFileName(path);
+        return fileName.EndsWith(".inf", StringComparison.OrdinalIgnoreCase) ? fileName : null;
     }
 
-    /// <summary>Wrapper mínimo para converter um SECURITY_DESCRIPTOR nativo em SDDL.</summary>
+    /// <summary>Minimal wrapper to convert a native SECURITY_DESCRIPTOR to SDDL.</summary>
     private sealed class CommonSecurityDescriptorForSddl
     {
         private readonly IntPtr _descriptor;

@@ -3,8 +3,8 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Diagnostics.Checks;
 
 /// <summary>
-/// Verifica se a fila de impressão do alvo existe no sistema: Pass quando
-/// GetQueueStateAsync confirma existência; Fail quando a fila está ausente.
+/// Checks whether the target print queue exists on the system: Pass when
+/// GetQueueStateAsync confirms existence; Fail when the queue is missing.
 /// </summary>
 public sealed class QueueExistsCheck : IDiagnosticCheck
 {
@@ -17,11 +17,11 @@ public sealed class QueueExistsCheck : IDiagnosticCheck
         ArgumentNullException.ThrowIfNull(gateway);
         ArgumentNullException.ThrowIfNull(target);
 
-        var fila = await gateway.GetQueueStateAsync(target.Name, ct).ConfigureAwait(false);
-        return fila.Exists
+        var queue = await gateway.GetQueueStateAsync(target.Name, ct).ConfigureAwait(false);
+        return queue.Exists
             ? new CheckOutcome(Id, CheckResult.Pass, Severity.Info,
-                $"Fila de impressão '{target.Name}' existe no sistema.")
+                $"Print queue '{target.Name}' exists on the system.")
             : new CheckOutcome(Id, CheckResult.Fail, Severity.Error,
-                $"Fila de impressão '{target.Name}' não existe no sistema.");
+                $"Print queue '{target.Name}' does not exist on the system.");
     }
 }

@@ -4,10 +4,10 @@ using System.Runtime.Versioning;
 namespace PrinterRescue.Adapters.Windows.Winspool;
 
 /// <summary>
-/// Declarações P/Invoke do winspool.drv. Classe interna, marcada como Windows-only:
-/// só é referenciada por código já protegido por guarda OperatingSystem.IsWindows().
-/// REGRA Nº 1: nenhuma função aqui instala ou baixa driver — AddPrinter usa apenas
-/// drivers já presentes na máquina (ex.: Microsoft IPP Class Driver).
+/// P/Invoke declarations for winspool.drv. Internal class, marked Windows-only:
+/// only referenced by code already guarded by OperatingSystem.IsWindows().
+/// RULE #1: no function here installs or downloads drivers — AddPrinter only uses
+/// drivers already present on the machine (e.g. the Microsoft IPP Class Driver).
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static partial class WinspoolNative
@@ -152,7 +152,7 @@ internal static partial class WinspoolNative
         uint level,
         ref PRINTER_INFO_2W printerInfo);
 
-    // ---- helpers de marshal -------------------------------------------------
+    // ---- marshal helpers -------------------------------------------------
 
     public static string PtrToString(IntPtr ptr)
         => ptr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUni(ptr) ?? string.Empty;

@@ -3,20 +3,20 @@ using Xunit;
 
 namespace PrinterRescue.Core.Tests.Snapshots;
 
-/// <summary>Fixtures válidas para os testes de persistência.</summary>
+/// <summary>Valid fixtures for persistence tests.</summary>
 public static class SnapshotFixtures
 {
     public const string SchemaVersion = "1.0";
 
-    public static PrinterTarget Alvo(string nome = TestTargets.NomePadrao) =>
-        new(nome, ShareName: null, PortName: "IP_192.168.0.40", PrinterProtocol.TcpRaw,
+    public static PrinterTarget Target(string name = TestTargets.DefaultName) =>
+        new(name, ShareName: null, PortName: "IP_192.168.0.40", PrinterProtocol.TcpRaw,
             DeviceId: null, DriverName: "HP Universal PCL6", DriverVersion: "3.12.0.0");
 
-    public static PortConfig Porta() =>
+    public static PortConfig Port() =>
         new("IP_192.168.0.40", "192.168.0.40", 9100, PrinterProtocol.TcpRaw);
 
-    public static QueueState Fila() =>
-        new(TestTargets.NomePadrao, Exists: true, StuckJobs: 0, DefaultPaperSize: "A4",
+    public static QueueState Queue() =>
+        new(TestTargets.DefaultName, Exists: true, StuckJobs: 0, DefaultPaperSize: "A4",
             CopiesDefault: 1, ColorDefault: false, DuplexDefault: true);
 
     public static DriverInfo Driver(bool ipp = false) =>
@@ -24,19 +24,19 @@ public static class SnapshotFixtures
             PresentInDriverStore: true, IsIppClassDriver: ipp);
 
     public static PrinterSnapshot Snapshot(
-        string nome = TestTargets.NomePadrao,
-        DateTime? criadoEm = null,
+        string name = TestTargets.DefaultName,
+        DateTime? createdAt = null,
         Guid? id = null,
-        SnapshotOrigin origem = SnapshotOrigin.Manual,
-        bool driverIpp = false) =>
+        SnapshotOrigin origin = SnapshotOrigin.Manual,
+        bool ippDriver = false) =>
         new(
             Id: id ?? Guid.NewGuid(),
-            CreatedAtUtc: criadoEm ?? new DateTime(2026, 8, 23, 12, 0, 0, DateTimeKind.Utc),
-            Origin: origem,
-            Target: Alvo(nome),
-            Port: Porta(),
-            Queue: Fila(),
-            Driver: Driver(driverIpp),
+            CreatedAtUtc: createdAt ?? new DateTime(2026, 8, 23, 12, 0, 0, DateTimeKind.Utc),
+            Origin: origin,
+            Target: Target(name),
+            Port: Port(),
+            Queue: Queue(),
+            Driver: Driver(ippDriver),
             Permissions: new Dictionary<string, string> { ["queueSddl"] = "G:SYD:PAI(A;;FA;;;BA)" },
             Defaults: new Dictionary<string, string> { ["paperSize"] = "A4", ["copies"] = "1" },
             SchemaVersion: SchemaVersion);
@@ -44,181 +44,181 @@ public static class SnapshotFixtures
 
 public sealed class SnapshotStoreTests : IDisposable
 {
-    private readonly string _raiz;
+    private readonly string _root;
 
     public SnapshotStoreTests()
     {
-        _raiz = Path.Combine(Path.GetTempPath(), "pr-tests-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_raiz);
+        _root = Path.Combine(Path.GetTempPath(), "pr-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_root);
     }
 
     public void Dispose()
     {
-        if (Directory.Exists(_raiz))
+        if (Directory.Exists(_root))
         {
-            Directory.Delete(_raiz, recursive: true);
+            Directory.Delete(_root, recursive: true);
         }
     }
 
     [Fact]
-    public async Task SalvarGravaJsonERecuperaRegistroIgual()
+    public async Task SaveWritesJsonAndReadsBackEqualRecord()
     {
-        var loja = new SnapshotStore(_raiz);
-        var original = SnapshotFixtures.Snapshot(origem: SnapshotOrigin.PreRepair);
+        var store = new SnapshotStore(_root);
+        var original = SnapshotFixtures.Snapshot(origin: SnapshotOrigin.PreRepair);
 
-        await loja.SaveAsync(original);
-        var carregado = await loja.LoadAsync(original.Id);
+        await store.SaveAsync(original);
+        var loaded = await store.LoadAsync(original.Id);
 
-        Assert.NotNull(carregado);
-        // Comparação campo a campo: records com membros Dictionary usam igualdade por
-        // referência nos dicionários, então Assert.Equal de objeto nunca passa após
-        // round-trip JSON mesmo com conteúdo idêntico.
-        Assert.Equal(original.Id, carregado.Id);
-        Assert.Equal(original.CreatedAtUtc, carregado.CreatedAtUtc);
-        Assert.Equal(original.Origin, carregado.Origin);
-        Assert.Equal(original.Target, carregado.Target);
-        Assert.Equal(original.Port, carregado.Port);
-        Assert.Equal(original.Queue, carregado.Queue);
-        Assert.Equal(original.Driver, carregado.Driver);
-        Assert.Equal(original.SchemaVersion, carregado.SchemaVersion);
-        Assert.True(original.Permissions.Count == carregado.Permissions.Count
-            && original.Permissions.All(kv => carregado.Permissions[kv.Key] == kv.Value));
-        Assert.True(original.Defaults.Count == carregado.Defaults.Count
-            && original.Defaults.All(kv => carregado.Defaults[kv.Key] == kv.Value));
-        Assert.True(File.Exists(Path.Combine(_raiz, original.Id + ".json")));
+        Assert.NotNull(loaded);
+        // Field-by-field comparison: records with Dictionary members use reference
+        // equality on dictionaries, so object Assert.Equal never passes after a
+        // JSON round-trip even with identical content.
+        Assert.Equal(original.Id, loaded.Id);
+        Assert.Equal(original.CreatedAtUtc, loaded.CreatedAtUtc);
+        Assert.Equal(original.Origin, loaded.Origin);
+        Assert.Equal(original.Target, loaded.Target);
+        Assert.Equal(original.Port, loaded.Port);
+        Assert.Equal(original.Queue, loaded.Queue);
+        Assert.Equal(original.Driver, loaded.Driver);
+        Assert.Equal(original.SchemaVersion, loaded.SchemaVersion);
+        Assert.True(original.Permissions.Count == loaded.Permissions.Count
+            && original.Permissions.All(kv => loaded.Permissions[kv.Key] == kv.Value));
+        Assert.True(original.Defaults.Count == loaded.Defaults.Count
+            && original.Defaults.All(kv => loaded.Defaults[kv.Key] == kv.Value));
+        Assert.True(File.Exists(Path.Combine(_root, original.Id + ".json")));
     }
 
     [Fact]
-    public async Task ArquivoGravadoContemSchemaVersionECamelCase()
+    public async Task WrittenFileContainsSchemaVersionAndCamelCase()
     {
-        var loja = new SnapshotStore(_raiz);
-        // origem PreRepair para exercitar a forma kebab-case ("pre-repair") na escrita
-        var snap = SnapshotFixtures.Snapshot(origem: SnapshotOrigin.PreRepair);
+        var store = new SnapshotStore(_root);
+        // PreRepair origin to exercise the kebab-case form ("pre-repair") on write
+        var snap = SnapshotFixtures.Snapshot(origin: SnapshotOrigin.PreRepair);
 
-        await loja.SaveAsync(snap);
+        await store.SaveAsync(snap);
 
-        var texto = await File.ReadAllTextAsync(Path.Combine(_raiz, snap.Id + ".json"));
-        Assert.Contains("\"schemaVersion\": \"1.0\"", texto);
-        Assert.Contains("\"createdAtUtc\"", texto);
-        Assert.Contains("\"tcp_raw\"", texto); // protocolo em snake_case
-        Assert.Contains("\"pre-repair\"", texto); // origem em kebab-case quando PreRepair
+        var text = await File.ReadAllTextAsync(Path.Combine(_root, snap.Id + ".json"));
+        Assert.Contains("\"schemaVersion\": \"1.0\"", text);
+        Assert.Contains("\"createdAtUtc\"", text);
+        Assert.Contains("\"tcp_raw\"", text); // protocol in snake_case
+        Assert.Contains("\"pre-repair\"", text); // origin in kebab-case for PreRepair
     }
 
     [Fact]
-    public async Task CarregarIdInexistenteRetornaNull()
+    public async Task LoadMissingIdReturnsNull()
     {
-        var loja = new SnapshotStore(_raiz);
+        var store = new SnapshotStore(_root);
 
-        var resultado = await loja.LoadAsync(Guid.NewGuid());
+        var result = await store.LoadAsync(Guid.NewGuid());
 
-        Assert.Null(resultado);
+        Assert.Null(result);
     }
 
     [Fact]
-    public async Task FindLatestForRetornaMaisRecentePorNome()
+    public async Task FindLatestForReturnsNewestByName()
     {
-        var loja = new SnapshotStore(_raiz);
-        var antigo = SnapshotFixtures.Snapshot(criadoEm: new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc));
-        var novo = SnapshotFixtures.Snapshot(id: antigo.Id, criadoEm: new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc));
-        // ids distintos para dois arquivos coexistirem
-        var antigoComOutroId = antigo with { Id = Guid.NewGuid() };
+        var store = new SnapshotStore(_root);
+        var oldSnapshot = SnapshotFixtures.Snapshot(createdAt: new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc));
+        var newSnapshot = SnapshotFixtures.Snapshot(id: oldSnapshot.Id, createdAt: new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc));
+        // distinct ids so two files can coexist
+        var oldWithOtherId = oldSnapshot with { Id = Guid.NewGuid() };
 
-        await loja.SaveAsync(antigoComOutroId);
-        await loja.SaveAsync(novo);
+        await store.SaveAsync(oldWithOtherId);
+        await store.SaveAsync(newSnapshot);
 
-        var encontrado = await loja.FindLatestForAsync(TestTargets.NomePadrao);
+        var found = await store.FindLatestForAsync(TestTargets.DefaultName);
 
-        Assert.NotNull(encontrado);
-        Assert.Equal(novo.Id, encontrado.Id);
+        Assert.NotNull(found);
+        Assert.Equal(newSnapshot.Id, found.Id);
     }
 
     [Fact]
-    public async Task FindLatestForSemSnapshotsRetornaNull()
+    public async Task FindLatestForWithoutSnapshotsReturnsNull()
     {
-        var loja = new SnapshotStore(_raiz);
+        var store = new SnapshotStore(_root);
 
-        var encontrado = await loja.FindLatestForAsync("Impressora Fantasma");
+        var found = await store.FindLatestForAsync("Ghost Printer");
 
-        Assert.Null(encontrado);
+        Assert.Null(found);
     }
 
     [Fact]
-    public async Task ListAsyncRetornaResumosDeTodosOsArquivos()
+    public async Task ListAsyncReturnsSummariesOfAllFiles()
     {
-        var loja = new SnapshotStore(_raiz);
-        await loja.SaveAsync(SnapshotFixtures.Snapshot(nome: "A"));
-        await loja.SaveAsync(SnapshotFixtures.Snapshot(nome: "B"));
+        var store = new SnapshotStore(_root);
+        await store.SaveAsync(SnapshotFixtures.Snapshot(name: "A"));
+        await store.SaveAsync(SnapshotFixtures.Snapshot(name: "B"));
 
-        var lista = await loja.ListAsync();
+        var list = await store.ListAsync();
 
-        Assert.Equal(2, lista.Count);
-        Assert.All(lista, s => Assert.False(s.Id == default));
-        Assert.Contains(lista, s => s.PrinterName == "A");
-        Assert.Contains(lista, s => s.PrinterName == "B");
+        Assert.Equal(2, list.Count);
+        Assert.All(list, s => Assert.False(s.Id == default));
+        Assert.Contains(list, s => s.PrinterName == "A");
+        Assert.Contains(list, s => s.PrinterName == "B");
     }
 
     [Fact]
-    public async Task DeleteAllLimpaORaiz()
+    public async Task DeleteAllClearsRoot()
     {
-        var loja = new SnapshotStore(_raiz);
-        await loja.SaveAsync(SnapshotFixtures.Snapshot());
+        var store = new SnapshotStore(_root);
+        await store.SaveAsync(SnapshotFixtures.Snapshot());
 
-        await loja.DeleteAllAsync();
+        await store.DeleteAllAsync();
 
-        Assert.Empty(Directory.GetFiles(_raiz));
-        Assert.Empty(await loja.ListAsync());
+        Assert.Empty(Directory.GetFiles(_root));
+        Assert.Empty(await store.ListAsync());
     }
 
     [Fact]
-    public async Task CarregarArquivoAcimaDeUmMebibyteRejeita()
+    public async Task LoadFileOverOneMebibyteRejects()
     {
-        var loja = new SnapshotStore(_raiz);
+        var store = new SnapshotStore(_root);
         var id = Guid.NewGuid();
-        var caminho = Path.Combine(_raiz, id + ".json");
-        await File.WriteAllBytesAsync(caminho, new byte[1024 * 1024 + 1]);
+        var path = Path.Combine(_root, id + ".json");
+        await File.WriteAllBytesAsync(path, new byte[1024 * 1024 + 1]);
 
-        await Assert.ThrowsAnyAsync<InvalidDataException>(() => loja.LoadAsync(id));
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() => store.LoadAsync(id));
     }
 
     [Fact]
-    public async Task CarregarJsonProfundoDemaisRejeita()
+    public async Task LoadTooDeepJsonRejects()
     {
-        var loja = new SnapshotStore(_raiz);
+        var store = new SnapshotStore(_root);
         var id = Guid.NewGuid();
-        var caminho = Path.Combine(_raiz, id + ".json");
-        // profundidade 20 > limite 16
-        var profundo = new string('[', 20) + new string(']', 20);
-        await File.WriteAllTextAsync(caminho, profundo);
+        var path = Path.Combine(_root, id + ".json");
+        // depth 20 > limit 16
+        var deep = new string('[', 20) + new string(']', 20);
+        await File.WriteAllTextAsync(path, deep);
 
-        await Assert.ThrowsAnyAsync<InvalidDataException>(() => loja.LoadAsync(id));
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() => store.LoadAsync(id));
     }
 
     [Fact]
-    public async Task CarregarJsonSemCamposObrigatoriosRejeita()
+    public async Task LoadJsonWithoutRequiredFieldsRejects()
     {
-        var loja = new SnapshotStore(_raiz);
+        var store = new SnapshotStore(_root);
         var id = Guid.NewGuid();
-        var caminho = Path.Combine(_raiz, id + ".json");
-        await File.WriteAllTextAsync(caminho, "{ \"nota\": \"sem schema nem target\" }");
+        var path = Path.Combine(_root, id + ".json");
+        await File.WriteAllTextAsync(path, "{ \"note\": \"no schema or target\" }");
 
-        await Assert.ThrowsAnyAsync<InvalidDataException>(() => loja.LoadAsync(id));
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() => store.LoadAsync(id));
     }
 
     [Fact]
-    public async Task NomeComTravessiaNuncaEscapaDaRaiz()
+    public async Task TraversalNameNeverEscapesRoot()
     {
-        var loja = new SnapshotStore(_raiz);
-        var malicioso = "../../../Windows";
+        var store = new SnapshotStore(_root);
+        var malicious = "../../../Windows";
 
-        // não deve lançar por traversal nem gravar fora da raiz
-        var snap = SnapshotFixtures.Snapshot(nome: malicioso);
-        await loja.SaveAsync(snap);
+        // must not throw on traversal nor write outside the root
+        var snap = SnapshotFixtures.Snapshot(name: malicious);
+        await store.SaveAsync(snap);
 
-        Assert.NotEmpty(Directory.GetFiles(_raiz));
-        var encontrado = await loja.FindLatestForAsync(malicioso);
-        Assert.NotNull(encontrado);
-        Assert.Equal(malicioso, encontrado.Target.Name);
-        // nada foi criado fora da raiz temporária
-        Assert.Single(Directory.GetFiles(_raiz));
+        Assert.NotEmpty(Directory.GetFiles(_root));
+        var found = await store.FindLatestForAsync(malicious);
+        Assert.NotNull(found);
+        Assert.Equal(malicious, found.Target.Name);
+        // nothing was created outside the temp root
+        Assert.Single(Directory.GetFiles(_root));
     }
 }

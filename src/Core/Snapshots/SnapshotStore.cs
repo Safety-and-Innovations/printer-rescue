@@ -5,212 +5,212 @@ using PrinterRescue.Core.Interfaces;
 namespace PrinterRescue.Core.Snapshots;
 
 /// <summary>
-/// Persistência de snapshots em arquivos JSON — um por snapshot, nomeado pelo Id.
-/// Parser endurecido: tamanho máximo 1 MiB, profundidade máxima 16, sem traversal
-/// (nomes de impressora nunca viram caminho).
+/// Snapshot persistence to JSON files — one per snapshot, named by Id.
+/// Hardened parser: 1 MiB max size, max depth 16, no traversal
+/// (printer names never become paths).
 /// </summary>
 public sealed class SnapshotStore : ISnapshotStore
 {
-    public const string SchemaVersionAtual = "1.0";
-    private const long TamanhoMaximoBytes = 1024 * 1024;
+    public const string CurrentSchemaVersion = "1.0";
+    private const long MaxSizeBytes = 1024 * 1024;
 
-    private static readonly JsonSerializerOptions OpcoesEscrita = new()
+    private static readonly JsonSerializerOptions WriteOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters =
         {
-            // SnapshotOrigin em kebab-case ("pre-repair"); demais enums em snake_case
-            // ("tcp_raw"). O primeiro conversor compatível vence na escrita.
+            // SnapshotOrigin in kebab-case ("pre-repair"); other enums in snake_case
+            // ("tcp_raw"). The first compatible converter wins on write.
             new OriginKebabWriter(),
             new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower),
         },
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private static readonly JsonSerializerOptions OpcoesLeitura = new()
+    private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         MaxDepth = 16,
         Converters =
         {
-            // Único conversor de enums na leitura: aceita PascalCase, kebab-case
-            // ("pre-repair"), snake_case ("pre_repair") e numérico — o conjunto que
-            // a própria escrita produz. Não registrar JsonStringEnumConverter junto:
-            // o primeiro da lista vence e rejeitaria as formas kebab/snake.
-            new EnumKebabOuCamelConverter(),
+            // Single enum converter on read: accepts PascalCase, kebab-case
+            // ("pre-repair"), snake_case ("pre_repair") and numeric — the set that
+            // writing itself produces. Do not register JsonStringEnumConverter alongside:
+            // the first in the list wins and would reject kebab/snake forms.
+            new EnumKebabOrCamelConverter(),
         },
     };
 
-    private readonly string _raiz;
+    private readonly string _root;
 
     public SnapshotStore(string rootDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
-        _raiz = Path.GetFullPath(rootDirectory);
-        Directory.CreateDirectory(_raiz);
+        _root = Path.GetFullPath(rootDirectory);
+        Directory.CreateDirectory(_root);
     }
 
-    /// <summary>Raiz física dos snapshots (para diagnóstico e testes).</summary>
-    public string RootDirectory => _raiz;
+    /// <summary>Physical snapshot root (for diagnostics and tests).</summary>
+    public string RootDirectory => _root;
 
     public async Task SaveAsync(PrinterSnapshot snapshot, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        if (!string.Equals(snapshot.SchemaVersion, SchemaVersionAtual, StringComparison.Ordinal))
+        if (!string.Equals(snapshot.SchemaVersion, CurrentSchemaVersion, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                $"schemaVersion '{snapshot.SchemaVersion}' desconhecida; esperada '{SchemaVersionAtual}'.");
+                $"unknown schemaVersion '{snapshot.SchemaVersion}'; expected '{CurrentSchemaVersion}'.");
         }
 
-        ValidarObrigatorios(snapshot);
+        ValidateRequired(snapshot);
 
-        var caminho = CaminhoDo(snapshot.Id);
-        await File.WriteAllTextAsync(caminho, JsonSerializer.Serialize(snapshot, OpcoesEscrita), ct)
+        var path = PathFor(snapshot.Id);
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(snapshot, WriteOptions), ct)
             .ConfigureAwait(false);
     }
 
     public async Task<PrinterSnapshot?> LoadAsync(Guid id, CancellationToken ct = default)
     {
-        var caminho = CaminhoDo(id);
-        if (!File.Exists(caminho))
+        var path = PathFor(id);
+        if (!File.Exists(path))
         {
             return null;
         }
 
-        var info = new FileInfo(caminho);
-        if (info.Length > TamanhoMaximoBytes)
+        var info = new FileInfo(path);
+        if (info.Length > MaxSizeBytes)
         {
-            throw new InvalidDataException($"Snapshot {id} excede o limite de 1 MiB.");
+            throw new InvalidDataException($"Snapshot {id} exceeds the 1 MiB limit.");
         }
 
-        var texto = await File.ReadAllTextAsync(caminho, ct).ConfigureAwait(false);
-        return Desserializar(texto, id);
+        var text = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+        return Deserialize(text, id);
     }
 
     public Task<PrinterSnapshot?> FindLatestForAsync(string printerName, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(printerName);
 
-        var maisRecente = ListarInternamente(ct)
+        var latest = ListInternal(ct)
             .Where(s => string.Equals(s.Target.Name, printerName, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(s => s.CreatedAtUtc)
             .Select(s => (PrinterSnapshot?)s)
             .FirstOrDefault();
 
-        return Task.FromResult(maisRecente);
+        return Task.FromResult(latest);
     }
 
     public Task<IReadOnlyList<SnapshotSummary>> ListAsync(CancellationToken ct = default)
     {
-        IReadOnlyList<SnapshotSummary> lista = ListarInternamente(ct)
+        IReadOnlyList<SnapshotSummary> list = ListInternal(ct)
             .OrderByDescending(s => s.CreatedAtUtc)
             .Select(s => new SnapshotSummary(
                 s.Id, s.CreatedAtUtc, s.Origin, s.Target.Name))
             .ToList();
 
-        return Task.FromResult(lista);
+        return Task.FromResult(list);
     }
 
     public Task DeleteAllAsync(CancellationToken ct = default)
     {
-        foreach (var arquivo in Directory.EnumerateFiles(_raiz, "*.json"))
+        foreach (var file in Directory.EnumerateFiles(_root, "*.json"))
         {
-            File.Delete(arquivo);
+            File.Delete(file);
         }
 
         return Task.CompletedTask;
     }
 
-    private List<PrinterSnapshot> ListarInternamente(CancellationToken ct)
+    private List<PrinterSnapshot> ListInternal(CancellationToken ct)
     {
-        var resultado = new List<PrinterSnapshot>();
-        foreach (var arquivo in Directory.EnumerateFiles(_raiz, "*.json"))
+        var result = new List<PrinterSnapshot>();
+        foreach (var file in Directory.EnumerateFiles(_root, "*.json"))
         {
             ct.ThrowIfCancellationRequested();
-            var info = new FileInfo(arquivo);
-            if (info.Length > TamanhoMaximoBytes || info.Length == 0)
+            var info = new FileInfo(file);
+            if (info.Length > MaxSizeBytes || info.Length == 0)
             {
-                continue; // corrompido demais ou vazio: ignora na listagem
+                continue; // too corrupt or empty: skip in listings
             }
 
             try
             {
-                var texto = File.ReadAllText(arquivo);
-                var snap = Desserializar(texto, null);
+                var text = File.ReadAllText(file);
+                var snap = Deserialize(text, null);
                 if (snap is not null)
                 {
-                    resultado.Add(snap);
+                    result.Add(snap);
                 }
             }
             catch (InvalidDataException)
             {
-                // arquivo inválido não derruba a listagem
+                // an invalid file does not take down the listing
             }
             catch (JsonException)
             {
-                // idem
+                // same
             }
         }
 
-        return resultado;
+        return result;
     }
 
-    private static PrinterSnapshot? Desserializar(string texto, Guid? idEsperado)
+    private static PrinterSnapshot? Deserialize(string text, Guid? expectedId)
     {
-        JsonDocument documento;
+        JsonDocument document;
         try
         {
-            documento = JsonDocument.Parse(
-                texto,
+            document = JsonDocument.Parse(
+                text,
                 new JsonDocumentOptions { MaxDepth = 16, AllowTrailingCommas = false });
         }
         catch (JsonException ex)
         {
-            // JSON malformado ou acima do limite de profundidade é erro da loja, não do framework.
-            throw new InvalidDataException("Snapshot contém JSON inválido ou acima do limite de profundidade.", ex);
+            // Malformed JSON or over the depth limit is a store error, not a framework one.
+            throw new InvalidDataException("Snapshot contains invalid JSON or exceeds the depth limit.", ex);
         }
 
-        using (documento)
+        using (document)
         {
-            var raiz = documento.RootElement;
-            if (raiz.ValueKind != JsonValueKind.Object
-                || !raiz.TryGetProperty("schemaVersion", out var versao)
-                || !raiz.TryGetProperty("id", out var idEl)
-                || !raiz.TryGetProperty("createdAtUtc", out var criadoEl)
-                || !raiz.TryGetProperty("origin", out var origemEl)
-                || !raiz.TryGetProperty("target", out var alvoEl)
-                || alvoEl.ValueKind != JsonValueKind.Object
-                || !alvoEl.TryGetProperty("name", out _)
-                || !alvoEl.TryGetProperty("protocol", out _))
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("schemaVersion", out var version)
+                || !root.TryGetProperty("id", out var idEl)
+                || !root.TryGetProperty("createdAtUtc", out var createdEl)
+                || !root.TryGetProperty("origin", out var originEl)
+                || !root.TryGetProperty("target", out var targetEl)
+                || targetEl.ValueKind != JsonValueKind.Object
+                || !targetEl.TryGetProperty("name", out _)
+                || !targetEl.TryGetProperty("protocol", out _))
             {
-                throw new InvalidDataException("Snapshot sem os campos obrigatórios mínimos.");
+                throw new InvalidDataException("Snapshot missing minimum required fields.");
             }
 
             PrinterSnapshot? snap;
             try
             {
-                snap = JsonSerializer.Deserialize<PrinterSnapshot>(texto, OpcoesLeitura);
+                snap = JsonSerializer.Deserialize<PrinterSnapshot>(text, ReadOptions);
             }
             catch (JsonException ex)
             {
-                throw new InvalidDataException($"Conteúdo de snapshot não converte para o schema: {ex.Message}", ex);
+                throw new InvalidDataException($"Snapshot content does not convert to the schema: {ex.Message}", ex);
             }
 
             if (snap is null)
             {
-                throw new InvalidDataException("Snapshot vazio após desserialização.");
+                throw new InvalidDataException("Empty snapshot after deserialization.");
             }
 
-            if (idEsperado is { } esperado && snap.Id != esperado)
+            if (expectedId is { } expected && snap.Id != expected)
             {
-                throw new InvalidDataException("Id do arquivo difere do solicitado.");
+                throw new InvalidDataException("File id differs from the requested one.");
             }
 
-            if (!string.Equals(snap.SchemaVersion, SchemaVersionAtual, StringComparison.Ordinal))
+            if (!string.Equals(snap.SchemaVersion, CurrentSchemaVersion, StringComparison.Ordinal))
             {
-                throw new InvalidDataException($"schemaVersion '{snap.SchemaVersion}' não suportada.");
+                throw new InvalidDataException($"unsupported schemaVersion '{snap.SchemaVersion}'.");
             }
 
             return snap with
@@ -221,26 +221,26 @@ public sealed class SnapshotStore : ISnapshotStore
         }
     }
 
-    private static void ValidarObrigatorios(PrinterSnapshot snapshot)
+    private static void ValidateRequired(PrinterSnapshot snapshot)
     {
         if (string.IsNullOrWhiteSpace(snapshot.Target?.Name))
         {
-            throw new InvalidDataException("target.name é obrigatório.");
+            throw new InvalidDataException("target.name is required.");
         }
     }
 
-    private string CaminhoDo(Guid id)
+    private string PathFor(Guid id)
     {
-        // Nome de arquivo derivado apenas do Guid: nomes de impressora nunca tocam o sistema de arquivos.
-        return Path.Combine(_raiz, id.ToString("D") + ".json");
+        // File name derived only from the Guid: printer names never touch the file system.
+        return Path.Combine(_root, id.ToString("D") + ".json");
     }
 
     /// <summary>
-    /// Conversor de enum para leitura: aceita o nome PascalCase, as formas kebab-case
-    /// e snake_case (produzidas pela escrita com JsonNamingPolicy) e valor numérico.
-    /// Funciona para qualquer tipo de enum, não apenas SnapshotOrigin.
+    /// Enum converter for reading: accepts the PascalCase name, kebab-case
+    /// and snake_case forms (produced on write with JsonNamingPolicy) and numeric values.
+    /// Works for any enum type, not just SnapshotOrigin.
     /// </summary>
-    private sealed class EnumKebabOuCamelConverter : JsonConverter<Enum>
+    private sealed class EnumKebabOrCamelConverter : JsonConverter<Enum>
     {
         public override bool CanConvert(Type typeToConvert)
             => typeToConvert.IsEnum;
@@ -252,31 +252,31 @@ public sealed class SnapshotStore : ISnapshotStore
                 return (Enum)Enum.ToObject(typeToConvert, reader.GetInt32());
             }
 
-            var texto = reader.GetString();
-            if (texto is null)
+            var text = reader.GetString();
+            if (text is null)
             {
-                throw new JsonException($"Valor nulo para enum {typeToConvert.Name}.");
+                throw new JsonException($"Null value for enum {typeToConvert.Name}.");
             }
 
             // kebab-case / snake_case -> PascalCase ("pre-repair" => "PreRepair").
             var pascal = string.Concat(
-                texto.Split('-', '_')
-                    .Where(static parte => parte.Length > 0)
-                    .Select(static parte => char.ToUpperInvariant(parte[0]) + parte[1..]));
+                text.Split('-', '_')
+                    .Where(static part => part.Length > 0)
+                    .Select(static part => char.ToUpperInvariant(part[0]) + part[1..]));
 
-            var tipo = Nullable.GetUnderlyingType(typeToConvert) ?? typeToConvert;
-            return (Enum)Enum.Parse(tipo, pascal, ignoreCase: true);
+            var type = Nullable.GetUnderlyingType(typeToConvert) ?? typeToConvert;
+            return (Enum)Enum.Parse(type, pascal, ignoreCase: true);
         }
 
         public override void Write(Utf8JsonWriter writer, Enum value, JsonSerializerOptions options)
-            => throw new NotSupportedException("Somente leitura; a escrita usa OpcoesEscrita.");
+            => throw new NotSupportedException("Read-only; writing uses WriteOptions.");
     }
 
-    /// <summary>Escreve SnapshotOrigin em kebab-case ("pre-repair"); demais enums seguem o conversor padrão.</summary>
+    /// <summary>Writes SnapshotOrigin in kebab-case ("pre-repair"); other enums follow the default converter.</summary>
     private sealed class OriginKebabWriter : JsonConverter<SnapshotOrigin>
     {
         public override SnapshotOrigin Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-            => throw new NotSupportedException("Somente escrita; a leitura usa EnumKebabOuCamelConverter.");
+            => throw new NotSupportedException("Write-only; reading uses EnumKebabOrCamelConverter.");
 
         public override void Write(Utf8JsonWriter writer, SnapshotOrigin value, JsonSerializerOptions options)
             => writer.WriteStringValue(value switch

@@ -26,7 +26,7 @@ jobs:
       - name: Build (zero warnings)
         run: dotnet build --no-restore -c Release PrinterRescue.sln
 
-      - name: Test (com cobertura)
+      - name: Test (with coverage)
         run: dotnet test --no-build -c Release PrinterRescue.sln --collect:"XPlat Code Coverage" --results-directory ./coverage
 
       - name: Upload coverage
@@ -43,6 +43,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Core.Tests no Linux (Core é multiplataforma)
+      - name: Core.Tests on Linux (Core is cross-platform)
         run: |
           dotnet test tests/Core.Tests/Core.Tests.csproj -c Release

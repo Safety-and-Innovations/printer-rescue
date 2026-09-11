@@ -8,61 +8,61 @@ namespace PrinterRescue.Core.Tests.Gui;
 public sealed class MainWindowViewModelTests
 {
     [Fact]
-    public void SemSelecaoComandosDesabilitados()
+    public void WithoutSelectionCommandsDisabled()
     {
         var vm = new MainWindowViewModel(new FakePrintGateway(), new FakeEngine());
 
-        Assert.False(vm.DiagnosticarCommand.CanExecute(null));
-        Assert.False(vm.CriarSnapshotCommand.CanExecute(null));
+        Assert.False(vm.DiagnoseCommand.CanExecute(null));
+        Assert.False(vm.CreateSnapshotCommand.CanExecute(null));
     }
 
     [Fact]
-    public async Task AtualizarCarregaImpressorasEStatus()
+    public async Task RefreshLoadsPrintersAndStatus()
     {
         var vm = new MainWindowViewModel(
             new FakePrintGateway(printers: [TestTargets.Tcp()]),
             new FakeEngine());
 
-        await vm.AtualizarAsync();
+        await vm.RefreshAsync();
 
-        _ = Assert.Single(vm.Impressoras);
-        Assert.Contains("1 impressora", vm.Status);
+        _ = Assert.Single(vm.Printers);
+        Assert.Contains("1 printer", vm.Status);
     }
 
     [Fact]
-    public async Task SelecionarHabilitaComandosEDiagnosticoPreencheResultados()
+    public async Task SelectingEnablesCommandsAndDiagnoseFillsResults()
     {
         var gateway = new FakePrintGateway(printers: [TestTargets.Tcp()]);
         var vm = new MainWindowViewModel(gateway, new FakeEngine());
-        await vm.AtualizarAsync();
+        await vm.RefreshAsync();
 
-        vm.ImpressoraSelecionada = vm.Impressoras[0];
+        vm.SelectedPrinter = vm.Printers[0];
 
-        Assert.True(vm.DiagnosticarCommand.CanExecute(null));
-        Assert.True(vm.CriarSnapshotCommand.CanExecute(null));
+        Assert.True(vm.DiagnoseCommand.CanExecute(null));
+        Assert.True(vm.CreateSnapshotCommand.CanExecute(null));
 
-        await vm.DiagnosticarAsync();
+        await vm.DiagnoseAsync();
 
-        _ = Assert.Single(vm.Resultados);
-        Assert.Equal(CheckId.SpoolerRunning, vm.Resultados[0].Id);
-        Assert.Contains("concluído", vm.Status);
+        _ = Assert.Single(vm.Results);
+        Assert.Equal(CheckId.SpoolerRunning, vm.Results[0].Id);
+        Assert.Contains("complete", vm.Status);
     }
 
     [Fact]
-    public async Task DiagnosticoSemSpoolerMostraFalhaNoStatus()
+    public async Task DiagnoseWithoutSpoolerShowsFailureInStatus()
     {
         var gateway = new FakePrintGateway
         {
-            ListPrintersError = new InvalidOperationException("RPC indisponível"),
+            ListPrintersError = new InvalidOperationException("RPC unavailable"),
         };
         var vm = new MainWindowViewModel(gateway, new FakeEngine());
 
-        // Atualização com spooler inacessível não estoura — reporta no status.
-        await vm.AtualizarAsync();
-        Assert.Contains("Erro", vm.Status);
+        // Refresh with an unreachable spooler does not throw — reports via status.
+        await vm.RefreshAsync();
+        Assert.Contains("Error", vm.Status);
     }
 
-    /// <summary>Engine falso: um check Pass fixo.</summary>
+    /// <summary>Fake engine: one fixed Pass check.</summary>
     private sealed class FakeEngine : IDiagnosticEngine
     {
         public Task<DiagnosticReport> DiagnoseAndPlanAsync(PrinterTarget target, CancellationToken ct = default)

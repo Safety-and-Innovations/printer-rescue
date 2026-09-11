@@ -2,28 +2,28 @@ using PrinterRescue.Core;
 
 namespace PrinterRescue.Cli;
 
-/// <summary>Mapeia resultados de diagnóstico/reparo para os códigos de saída contratuais.</summary>
+/// <summary>Maps diagnostic/repair results to the contractual exit codes.</summary>
 public static class ExitCodeMapper
 {
-    /// <summary>Prioridade: aplicado &gt; bloqueio por política &gt; falta de snapshot &gt; falha &gt; ok.</summary>
-    public static ExitCode DeReparo(IReadOnlyList<RepairOutcome> resultados)
+    /// <summary>Priority: applied &gt; policy block &gt; missing snapshot &gt; failure &gt; ok.</summary>
+    public static ExitCode FromRepair(IReadOnlyList<RepairOutcome> results)
     {
-        if (resultados.Count == 0)
+        if (results.Count == 0)
         {
-            return ExitCode.Ok; // plano vazio = dry-run sem passos
+            return ExitCode.Ok; // empty plan = dry-run with no steps
         }
 
-        if (resultados.Any(r => r.Status == RepairStatus.Applied))
+        if (results.Any(r => r.Status == RepairStatus.Applied))
         {
             return ExitCode.RepairApplied;
         }
 
-        if (resultados.Any(r => r.Status == RepairStatus.SkippedPolicyViolation))
+        if (results.Any(r => r.Status == RepairStatus.SkippedPolicyViolation))
         {
             return ExitCode.RepairBlockedByPolicy;
         }
 
-        if (resultados.Any(r => r.Status == RepairStatus.SkippedNoSnapshot))
+        if (results.Any(r => r.Status == RepairStatus.SkippedNoSnapshot))
         {
             return ExitCode.SnapshotMissing;
         }
@@ -31,11 +31,11 @@ public static class ExitCodeMapper
         return ExitCode.DiagnosticFailed;
     }
 
-    public static ExitCode DeDiagnostico(IReadOnlyList<CheckOutcome> checks)
+    public static ExitCode FromDiagnostics(IReadOnlyList<CheckOutcome> checks)
         => checks.Any(c => c.Result == CheckResult.Fail) ? ExitCode.DiagnosticFailed : ExitCode.Ok;
 }
 
-/// <summary>Formatação textual das saídas da CLI (pt-BR).</summary>
+/// <summary>Text formatting for CLI output.</summary>
 public static class OutputFormatter
 {
     public static string Check(CheckOutcome c) => c.Result switch
@@ -46,18 +46,18 @@ public static class OutputFormatter
         _ => $"[N/A ] {c.Id}: {c.Detail}",
     };
 
-    public static IReadOnlyList<string> Plano(IReadOnlyList<RepairStep> passos)
+    public static IReadOnlyList<string> Plan(IReadOnlyList<RepairStep> steps)
     {
-        var linhas = new List<string>(passos.Count);
-        for (var i = 0; i < passos.Count; i++)
+        var lines = new List<string>(steps.Count);
+        for (var i = 0; i < steps.Count; i++)
         {
-            var p = passos[i];
-            var marcadores = string.Concat(
-                p.Destructive ? " [destrutivo]" : string.Empty,
-                p.RequiresElevation ? " [elevação]" : string.Empty);
-            linhas.Add($"{i + 1}. {p.Kind}{marcadores} — {p.Description}");
+            var step = steps[i];
+            var markers = string.Concat(
+                step.Destructive ? " [destructive]" : string.Empty,
+                step.RequiresElevation ? " [elevation]" : string.Empty);
+            lines.Add($"{i + 1}. {step.Kind}{markers} — {step.Description}");
         }
 
-        return linhas;
+        return lines;
     }
 }

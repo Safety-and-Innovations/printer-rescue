@@ -6,34 +6,34 @@ using Xunit;
 
 namespace PrinterRescue.Core.Tests.Workflows;
 
-/// <summary>Executor falso que registra os passos recebidos e devolve resultado configurável.</summary>
+/// <summary>Fake executor that records received steps and returns a configurable result.</summary>
 public sealed class FakeExecutor : IRepairExecutor
 {
-    public List<RepairStep> Recebidos { get; } = [];
+    public List<RepairStep> Received { get; } = [];
 
-    /// <summary>Status devolvido para cada passo, na ordem. Último valor repete.</summary>
+    /// <summary>Status returned for each step, in order. Last value repeats.</summary>
     public Queue<RepairStatus> Statuses { get; init; } = new();
 
-    public bool Elevado { get; set; } = true;
+    public bool Elevated { get; set; } = true;
 
-    public bool IsElevated() => Elevado;
+    public bool IsElevated() => Elevated;
 
     public Task<RepairOutcome> ExecuteAsync(RepairStep action, PrinterSnapshot context, CancellationToken ct = default)
     {
-        Recebidos.Add(action);
+        Received.Add(action);
         var status = Statuses.Count > 0 ? Statuses.Dequeue() : RepairStatus.Applied;
-        return Task.FromResult(new RepairOutcome(Guid.NewGuid(), context.Id, action.Kind, status, "executado"));
+        return Task.FromResult(new RepairOutcome(Guid.NewGuid(), context.Id, action.Kind, status, "executed"));
     }
 }
 
-/// <summary>Loja falsa que registra snapshots salvos.</summary>
+/// <summary>Fake store that records saved snapshots.</summary>
 public sealed class FakeStore : ISnapshotStore
 {
-    public List<PrinterSnapshot> Salvos { get; } = [];
+    public List<PrinterSnapshot> Saved { get; } = [];
 
     public Task SaveAsync(PrinterSnapshot snapshot, CancellationToken ct = default)
     {
-        Salvos.Add(snapshot);
+        Saved.Add(snapshot);
         return Task.CompletedTask;
     }
 
@@ -44,178 +44,178 @@ public sealed class FakeStore : ISnapshotStore
         => Task.FromResult<IReadOnlyList<SnapshotSummary>>([]);
 
     public Task<PrinterSnapshot?> LoadAsync(Guid id, CancellationToken ct = default)
-        => Task.FromResult<PrinterSnapshot?>(Salvos.FirstOrDefault(s => s.Id == id));
+        => Task.FromResult<PrinterSnapshot?>(Saved.FirstOrDefault(s => s.Id == id));
 
     public Task DeleteAllAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
 
-/// <summary>Guarda falsa: nega passos cujo Kind esteja na lista.</summary>
-public sealed class FakeGuard(params RepairActionKind[] negar) : IPolicyGuard
+/// <summary>Fake guard: denies steps whose Kind is in the list.</summary>
+public sealed class FakeGuard(params RepairActionKind[] deny) : IPolicyGuard
 {
-    public List<RepairActionKind> Negados { get; } = [.. negar];
+    public List<RepairActionKind> Denied { get; } = [.. deny];
 
     public PolicyDecision Evaluate(RepairStep action, PrinterSnapshot context)
-        => Negados.Contains(action.Kind)
-            ? new PolicyDecision(false, $"Passo {action.Kind} viola a REGRA Nº 1.")
+        => Denied.Contains(action.Kind)
+            ? new PolicyDecision(false, $"Step {action.Kind} violates RULE #1.")
             : new PolicyDecision(true, "OK");
 }
 
 public static class WorkflowFixtures
 {
-    public static RepairStep Passo(RepairActionKind kind, bool destrutivo = false, bool elevacao = false) =>
-        new(kind, Description: kind.ToString(), Destructive: destrutivo, RequiresElevation: elevacao);
+    public static RepairStep Step(RepairActionKind kind, bool destructive = false, bool elevation = false) =>
+        new(kind, Description: kind.ToString(), Destructive: destructive, RequiresElevation: elevation);
 
-    public static RepairPlan Plano(params RepairStep[] passos) =>
-        new(Guid.NewGuid(), passos, passos.Any(p => p.RequiresElevation));
+    public static RepairPlan Plan(params RepairStep[] steps) =>
+        new(Guid.NewGuid(), steps, steps.Any(p => p.RequiresElevation));
 }
 
 public sealed class RepairWorkflowTests
 {
     [Fact]
-    public async Task FluxoFelizExecutaTodosOsPassosNaOrdem()
+    public async Task HappyPathRunsAllStepsInOrder()
     {
         var executor = new FakeExecutor();
         var wf = new RepairWorkflow(executor, new FakeGuard(), store: null, capture: new CaptureWorkflow(new FakePrintGateway()));
         var snap = SnapshotFixtures.Snapshot();
-        var plano = WorkflowFixtures.Plano(
-            WorkflowFixtures.Passo(RepairActionKind.ClearQueue),
-            WorkflowFixtures.Passo(RepairActionKind.RestartSpooler, elevacao: true));
+        var plan = WorkflowFixtures.Plan(
+            WorkflowFixtures.Step(RepairActionKind.ClearQueue),
+            WorkflowFixtures.Step(RepairActionKind.RestartSpooler, elevation: true));
 
-        var resultados = await wf.RunAsync(plano, snap);
+        var results = await wf.RunAsync(plan, snap);
 
-        Assert.All(resultados, r => Assert.Equal(RepairStatus.Applied, r.Status));
-        Assert.Equal(2, executor.Recebidos.Count);
-        Assert.Equal(RepairActionKind.ClearQueue, executor.Recebidos[0].Kind);
-        Assert.Equal(RepairActionKind.RestartSpooler, executor.Recebidos[1].Kind);
+        Assert.All(results, r => Assert.Equal(RepairStatus.Applied, r.Status));
+        Assert.Equal(2, executor.Received.Count);
+        Assert.Equal(RepairActionKind.ClearQueue, executor.Received[0].Kind);
+        Assert.Equal(RepairActionKind.RestartSpooler, executor.Received[1].Kind);
     }
 
     [Fact]
-    public async Task PassoNegadoPelaPoliticaViraSkippedPolicyViolationEContinua()
+    public async Task StepDeniedByPolicyBecomesSkippedPolicyViolationAndContinues()
     {
         var executor = new FakeExecutor();
         var wf = new RepairWorkflow(executor, new FakeGuard(RepairActionKind.ReinstallFromDriverStore),
             store: null, capture: new CaptureWorkflow(new FakePrintGateway()));
         var snap = SnapshotFixtures.Snapshot();
-        var plano = WorkflowFixtures.Plano(
-            WorkflowFixtures.Passo(RepairActionKind.ReinstallFromDriverStore),
-            WorkflowFixtures.Passo(RepairActionKind.RestoreDefaults));
+        var plan = WorkflowFixtures.Plan(
+            WorkflowFixtures.Step(RepairActionKind.ReinstallFromDriverStore),
+            WorkflowFixtures.Step(RepairActionKind.RestoreDefaults));
 
-        var resultados = await wf.RunAsync(plano, snap);
+        var results = await wf.RunAsync(plan, snap);
 
-        Assert.Equal(RepairStatus.SkippedPolicyViolation, resultados[0].Status);
-        Assert.Contains("REGRA Nº 1", resultados[0].Detail);
-        Assert.Equal(RepairStatus.Applied, resultados[1].Status); // seguiu o plano
+        Assert.Equal(RepairStatus.SkippedPolicyViolation, results[0].Status);
+        Assert.Contains("RULE #1", results[0].Detail);
+        Assert.Equal(RepairStatus.Applied, results[1].Status); // plan continues
     }
 
     [Fact]
-    public async Task DestrutivoSemSnapshotViraSkippedNoSnapshotENaoExecuta()
+    public async Task DestructiveWithoutSnapshotBecomesSkippedNoSnapshotAndDoesNotRun()
     {
         var executor = new FakeExecutor();
         var wf = new RepairWorkflow(executor, new FakeGuard(), store: null, capture: new CaptureWorkflow(new FakePrintGateway()));
-        var plano = WorkflowFixtures.Plano(
-            WorkflowFixtures.Passo(RepairActionKind.RemoveBrokenInstall, destrutivo: true),
-            WorkflowFixtures.Passo(RepairActionKind.ClearQueue));
+        var plan = WorkflowFixtures.Plan(
+            WorkflowFixtures.Step(RepairActionKind.RemoveBrokenInstall, destructive: true),
+            WorkflowFixtures.Step(RepairActionKind.ClearQueue));
 
-        var resultados = await wf.RunAsync(plano, lastGood: null);
+        var results = await wf.RunAsync(plan, lastGood: null);
 
-        Assert.Equal(RepairStatus.SkippedNoSnapshot, resultados[0].Status);
-        Assert.DoesNotContain(executor.Recebidos, s => s.Kind == RepairActionKind.RemoveBrokenInstall);
-        Assert.Equal(RepairStatus.Applied, resultados[1].Status);
+        Assert.Equal(RepairStatus.SkippedNoSnapshot, results[0].Status);
+        Assert.DoesNotContain(executor.Received, s => s.Kind == RepairActionKind.RemoveBrokenInstall);
+        Assert.Equal(RepairStatus.Applied, results[1].Status);
     }
 
     [Fact]
-    public async Task DestrutivoSemElevacaoFalhaAntesDeExecutar()
+    public async Task DestructiveWithoutElevationFailsBeforeRunning()
     {
-        var executor = new FakeExecutor { Elevado = false };
+        var executor = new FakeExecutor { Elevated = false };
         var wf = new RepairWorkflow(executor, new FakeGuard(), store: null, capture: new CaptureWorkflow(new FakePrintGateway()));
         var snap = SnapshotFixtures.Snapshot();
-        var plano = WorkflowFixtures.Plano(
-            WorkflowFixtures.Passo(RepairActionKind.RemoveBrokenInstall, destrutivo: true, elevacao: true));
+        var plan = WorkflowFixtures.Plan(
+            WorkflowFixtures.Step(RepairActionKind.RemoveBrokenInstall, destructive: true, elevation: true));
 
-        var resultados = await wf.RunAsync(plano, snap);
+        var results = await wf.RunAsync(plan, snap);
 
-        Assert.Equal(RepairStatus.Failed, resultados[0].Status);
-        Assert.Empty(executor.Recebidos);
+        Assert.Equal(RepairStatus.Failed, results[0].Status);
+        Assert.Empty(executor.Received);
     }
 
     [Fact]
-    public async Task PrimeiroDestrutivoGravaSnapshotPreRepairUmaUnicaVez()
+    public async Task FirstDestructiveWritesPreRepairSnapshotExactlyOnce()
     {
         var executor = new FakeExecutor();
-        var loja = new FakeStore();
-        var wf = new RepairWorkflow(executor, new FakeGuard(), loja, capture: new CaptureWorkflow(new FakePrintGateway()));
+        var store = new FakeStore();
+        var wf = new RepairWorkflow(executor, new FakeGuard(), store, capture: new CaptureWorkflow(new FakePrintGateway()));
         var snap = SnapshotFixtures.Snapshot();
-        var plano = WorkflowFixtures.Plano(
-            WorkflowFixtures.Passo(RepairActionKind.ClearQueue),
-            WorkflowFixtures.Passo(RepairActionKind.RemoveBrokenInstall, destrutivo: true),
-            WorkflowFixtures.Passo(RepairActionKind.ReinstallFromDriverStore, destrutivo: true));
+        var plan = WorkflowFixtures.Plan(
+            WorkflowFixtures.Step(RepairActionKind.ClearQueue),
+            WorkflowFixtures.Step(RepairActionKind.RemoveBrokenInstall, destructive: true),
+            WorkflowFixtures.Step(RepairActionKind.ReinstallFromDriverStore, destructive: true));
 
-        await wf.RunAsync(plano, snap);
+        await wf.RunAsync(plan, snap);
 
-        var pre = loja.Salvos.Where(s => s.Origin == SnapshotOrigin.PreRepair).ToList();
+        var pre = store.Saved.Where(s => s.Origin == SnapshotOrigin.PreRepair).ToList();
         _ = Assert.Single(pre);
     }
 
     [Fact]
-    public async Task HouveAplicadoGravaSnapshotPostRepair()
+    public async Task AppliedWritesPostRepairSnapshot()
     {
         var executor = new FakeExecutor();
-        var loja = new FakeStore();
-        var wf = new RepairWorkflow(executor, new FakeGuard(), loja, capture: new CaptureWorkflow(new FakePrintGateway()));
+        var store = new FakeStore();
+        var wf = new RepairWorkflow(executor, new FakeGuard(), store, capture: new CaptureWorkflow(new FakePrintGateway()));
         var snap = SnapshotFixtures.Snapshot();
-        var plano = WorkflowFixtures.Plano(WorkflowFixtures.Passo(RepairActionKind.ClearQueue));
+        var plan = WorkflowFixtures.Plan(WorkflowFixtures.Step(RepairActionKind.ClearQueue));
 
-        await wf.RunAsync(plano, snap);
+        await wf.RunAsync(plan, snap);
 
-        var post = loja.Salvos.Where(s => s.Origin == SnapshotOrigin.PostRepair).ToList();
+        var post = store.Saved.Where(s => s.Origin == SnapshotOrigin.PostRepair).ToList();
         _ = Assert.Single(post);
     }
 
     [Fact]
-    public async Task NadaAplicadoNaoGravaPostRepair()
+    public async Task NothingAppliedWritesNoPostRepair()
     {
         var executor = new FakeExecutor { Statuses = new Queue<RepairStatus>([RepairStatus.Failed]) };
-        var loja = new FakeStore();
-        var wf = new RepairWorkflow(executor, new FakeGuard(), loja, capture: new CaptureWorkflow(new FakePrintGateway()));
-        var plano = WorkflowFixtures.Plano(WorkflowFixtures.Passo(RepairActionKind.ClearQueue));
+        var store = new FakeStore();
+        var wf = new RepairWorkflow(executor, new FakeGuard(), store, capture: new CaptureWorkflow(new FakePrintGateway()));
+        var plan = WorkflowFixtures.Plan(WorkflowFixtures.Step(RepairActionKind.ClearQueue));
 
-        await wf.RunAsync(plano, SnapshotFixtures.Snapshot());
+        await wf.RunAsync(plan, SnapshotFixtures.Snapshot());
 
-        Assert.DoesNotContain(loja.Salvos, s => s.Origin == SnapshotOrigin.PostRepair);
+        Assert.DoesNotContain(store.Saved, s => s.Origin == SnapshotOrigin.PostRepair);
     }
 
     [Fact]
-    public async Task SemSnapshotEDestrutivosSomentePlanoTerminaVazioDeExecucaoReal()
+    public async Task WithoutSnapshotAndOnlyDestructivesEndsWithNoRealExecution()
     {
         var executor = new FakeExecutor();
         var wf = new RepairWorkflow(executor, new FakeGuard(), store: null, capture: new CaptureWorkflow(new FakePrintGateway()));
-        var plano = WorkflowFixtures.Plano(
-            WorkflowFixtures.Passo(RepairActionKind.RemoveBrokenInstall, destrutivo: true),
-            WorkflowFixtures.Passo(RepairActionKind.ReinstallWithIppClassDriver, destrutivo: true));
+        var plan = WorkflowFixtures.Plan(
+            WorkflowFixtures.Step(RepairActionKind.RemoveBrokenInstall, destructive: true),
+            WorkflowFixtures.Step(RepairActionKind.ReinstallWithIppClassDriver, destructive: true));
 
-        var resultados = await wf.RunAsync(plano, lastGood: null);
+        var results = await wf.RunAsync(plan, lastGood: null);
 
-        Assert.All(resultados, r => Assert.Equal(RepairStatus.SkippedNoSnapshot, r.Status));
-        Assert.Empty(executor.Recebidos);
+        Assert.All(results, r => Assert.Equal(RepairStatus.SkippedNoSnapshot, r.Status));
+        Assert.Empty(executor.Received);
     }
 }
 
 public sealed class CaptureWorkflowTests
 {
     [Fact]
-    public async Task CapturaMontaSnapshotCompletoDoGateway()
+    public async Task CaptureBuildsCompleteSnapshotFromGateway()
     {
-        var alvo = TestTargets.Tcp();
+        var target = TestTargets.Tcp();
         var gateway = new FakePrintGateway(
-            printers: [alvo],
-            port: SnapshotFixtures.Porta(),
-            queue: SnapshotFixtures.Fila(),
+            printers: [target],
+            port: SnapshotFixtures.Port(),
+            queue: SnapshotFixtures.Queue(),
             driver: SnapshotFixtures.Driver());
         var wf = new CaptureWorkflow(gateway);
 
-        var snap = await wf.CaptureAsync(alvo, SnapshotOrigin.Manual);
+        var snap = await wf.CaptureAsync(target, SnapshotOrigin.Manual);
 
-        Assert.Equal(SnapshotStore.SchemaVersionAtual, snap.SchemaVersion);
+        Assert.Equal(SnapshotStore.CurrentSchemaVersion, snap.SchemaVersion);
         Assert.Equal(SnapshotOrigin.Manual, snap.Origin);
         Assert.NotNull(snap.Port);
         Assert.NotNull(snap.Queue);
@@ -224,13 +224,13 @@ public sealed class CaptureWorkflowTests
     }
 
     [Fact]
-    public async Task CapturaSemPortaOuDriverNomeadosDeixaCamposNulos()
+    public async Task CaptureWithoutNamedPortOrDriverLeavesFieldsNull()
     {
-        var alvo = TestTargets.Tcp(portName: null) with { DriverName = null };
-        var gateway = new FakePrintGateway(queue: SnapshotFixtures.Fila());
+        var target = TestTargets.Tcp(portName: null) with { DriverName = null };
+        var gateway = new FakePrintGateway(queue: SnapshotFixtures.Queue());
         var wf = new CaptureWorkflow(gateway);
 
-        var snap = await wf.CaptureAsync(alvo, SnapshotOrigin.PreRepair);
+        var snap = await wf.CaptureAsync(target, SnapshotOrigin.PreRepair);
 
         Assert.Null(snap.Port);
         Assert.Null(snap.Driver);
