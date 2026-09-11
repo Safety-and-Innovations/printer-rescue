@@ -13,9 +13,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Core\Core.csproj" />
-    <!-- Referência ao adapter Windows é permitida aqui: os testes exercitam
-         apenas a lógica testável (parsers, mapeamentos) via interfaces do Core.
-         O corpo P/Invoke só executa em Windows real. -->
+    <!-- Reference to the Windows adapter is allowed here: tests exercise
+         only the testable logic (parsers, mappings) via Core interfaces.
+         The P/Invoke body only runs on real Windows. -->
     <ProjectReference Include="..\..\src\Adapters.Windows\Adapters.Windows.csproj" />
   </ItemGroup>
 

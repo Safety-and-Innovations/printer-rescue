@@ -13,9 +13,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Core\Core.csproj" />
-    <!-- Lógica pura da CLI (mapeadores/formatadores) é testada aqui também -->
+    <!-- Pure CLI logic (mappers/formatters) is also tested here -->
     <ProjectReference Include="..\..\src\Cli\Cli.csproj" />
-    <!-- ViewModels da GUI são lógica pura testável em qualquer SO -->
+    <!-- GUI ViewModels are pure logic testable on any OS -->
     <ProjectReference Include="..\..\src\Gui\Gui.csproj" />
   </ItemGroup>
 

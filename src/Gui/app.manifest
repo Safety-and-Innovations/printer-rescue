@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Printer Rescue — requer elevação admin para operações destrutivas (spooler, remoção de fila). -->
+<!-- Printer Rescue — requires admin elevation for destructive operations (spooler, queue removal). -->
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>

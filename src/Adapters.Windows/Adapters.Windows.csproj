@@ -3,9 +3,9 @@
   <PropertyGroup>
     <RootNamespace>PrinterRescue.Adapters.Windows</RootNamespace>
     <AssemblyName>PrinterRescue.Adapters.Windows</AssemblyName>
-    <!-- net8.0 puro: compila no Linux. Todo código que toca API do Windows usa
-         [SupportedOSPlatform("windows")] + guarda OperatingSystem.IsWindows();
-         CA1416 é erro (TreatWarningsAsErrors), então nada passa sem guarda. -->
+    <!-- Pure net8.0: compiles on Linux. Any code touching the Windows API uses
+         [SupportedOSPlatform("windows")] + an OperatingSystem.IsWindows() guard;
+         CA1416 is an error (TreatWarningsAsErrors), so nothing passes without a guard. -->
   </PropertyGroup>
 
   <ItemGroup>

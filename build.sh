@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-projetos=(
+projects=(
   src/Core/Core.csproj
   src/Cli/Cli.csproj
   src/Gui/Gui.csproj
@@ -13,7 +13,7 @@ projetos=(
 )
 
 echo "== restore =="
-for p in "${projetos[@]}"; do dotnet restore "$p"; done
+for p in "${projects[@]}"; do dotnet restore "$p"; done
 
 echo "== build (zero warnings) =="
 dotnet build --no-restore -c Release PrinterRescue.sln
