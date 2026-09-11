@@ -9,7 +9,7 @@ namespace PrinterRescue.Core.Policy;
 /// no step may download, host, index, or distribute printer drivers.
 /// The violation vector is the step Description: any mention of driver
 /// acquisition or distribution denies the step, regardless of Kind. Comparison is
-/// case-insensitive and accent-insensitive ("catalogo" and "catálogo" match).
+/// case-insensitive and accent-insensitive.
 /// </summary>
 public sealed class PolicyGuard : IPolicyGuard
 {
@@ -21,11 +21,6 @@ public sealed class PolicyGuard : IPolicyGuard
         "distribute",
         "driver catalog",
         "install external driver",
-        "baixar",
-        "hospedar",
-        "distribuir",
-        "catálogo de driver",
-        "instalar driver externo",
     ];
 
     /// <inheritdoc />

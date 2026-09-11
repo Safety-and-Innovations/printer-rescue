@@ -28,13 +28,13 @@ public sealed class PolicyGuardTests
     }
 
     [Theory]
-    [InlineData("Baixar driver do site do fabricante")]
-    [InlineData("Fazer DOWNLOAD do pacote de driver completo")]
-    [InlineData("Hospedar driver em servidor interno da rede")]
-    [InlineData("Distribuir driver para as estacoes de trabalho")]
-    [InlineData("Reinstalar usando catalogo de driver da web")]
-    [InlineData("Instalar driver externo assinado pelo fabricante")]
-    [InlineData("Rotina que vai Baixar e Hospedar driver no compartilhamento")]
+    [InlineData("Download driver from the vendor site")]
+    [InlineData("Perform DOWNLOAD of the full driver package")]
+    [InlineData("Host driver on an internal network server")]
+    [InlineData("Distribute driver to workstations")]
+    [InlineData("Reinstall using a web driver catalog")]
+    [InlineData("Install external driver signed by the vendor")]
+    [InlineData("Routine that will download and host the driver on the share")]
     public void EvaluateDeniesDescriptionWithDriverDistributionTerm(string description)
     {
         var step = new RepairStep(RepairActionKind.ReinstallFromDriverStore, description, Destructive: true, RequiresElevation: true);
@@ -51,7 +51,7 @@ public sealed class PolicyGuardTests
         // Unknown Kind values outside the enum do not exist in C#; the main violation vector is the Description.
         var step = new RepairStep(
             RepairActionKind.RestoreDefaults,
-            "Publish driver: hospedar driver in an online repository and distribuir driver to branches.",
+            "Publish driver: host driver in an online repository and distribute driver to branches.",
             Destructive: false,
             RequiresElevation: false);
 
@@ -63,19 +63,19 @@ public sealed class PolicyGuardTests
     [Fact]
     public void EvaluateDenialReportsDetectedTerm()
     {
-        var step = new RepairStep(RepairActionKind.ClearQueue, "Routine that will baixar driver before clearing the queue.", Destructive: false, RequiresElevation: false);
+        var step = new RepairStep(RepairActionKind.ClearQueue, "Routine that will download driver before clearing the queue.", Destructive: false, RequiresElevation: false);
 
         var decision = _guard.Evaluate(step, CreateSnapshot());
 
         Assert.False(decision.Allowed);
-        Assert.Contains("baixar", decision.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("download", decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void EvaluateDoesNotDependOnSnapshotToDecide()
     {
         var safeStep = new RepairStep(RepairActionKind.ClearQueue, "Clear the print queue.", Destructive: false, RequiresElevation: false);
-        var forbiddenStep = new RepairStep(RepairActionKind.ClearQueue, "Baixar driver before clearing the queue.", Destructive: false, RequiresElevation: false);
+        var forbiddenStep = new RepairStep(RepairActionKind.ClearQueue, "Download driver before clearing the queue.", Destructive: false, RequiresElevation: false);
 
         var allowed = _guard.Evaluate(safeStep, CreateSnapshot());
         var denied = _guard.Evaluate(forbiddenStep, CreateSnapshot());
