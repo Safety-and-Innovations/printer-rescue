@@ -6,3 +6,4 @@ coverage/
 .vs/
 .idea/
 *.sln.DotSettings.user
+opencode/*
