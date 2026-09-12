@@ -1,6 +1,10 @@
 # Printer Rescue
 
-![status](https://img.shields.io/badge/status-in%20development-yellow) ![stack](https://img.shields.io/badge/.NET-8.0-blue) ![tests](https://img.shields.io/badge/TDD-xUnit-green)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![FOSS](https://img.shields.io/badge/FOSS-Free%20%26%20Open%20Source-blue.svg)](LICENSE)
+![status](https://img.shields.io/badge/status-in%20development-yellow)
+![stack](https://img.shields.io/badge/.NET-8.0-blue)
+![tests](https://img.shields.io/badge/TDD-xUnit-green)
 
 > "This printer was working with IP 192.168.0.40, driver Y, port Z.
 > Restore that state?"
